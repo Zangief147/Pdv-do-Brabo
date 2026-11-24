@@ -1,0 +1,241 @@
+:root {
+  --fundo: #f1f5f9;
+  --painel: #ffffff;
+  --primario: #0f766e;
+  --primario-hover: #115e59;
+  --perigo: #b91c1c;
+  --texto: #0f172a;
+  --borda: #e2e8f0;
+  --verde: #16a34a;
+  --amarelo: #ca8a04;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--fundo);
+  color: var(--texto);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 20px;
+  background: #0f172a;
+  color: #fff;
+}
+.logo { font-weight: 700; font-size: 1.1rem; }
+nav { display: flex; gap: 6px; flex: 1; }
+.aba {
+  background: transparent;
+  color: #cbd5e1;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.aba:hover { background: #1e293b; color: #fff; }
+.aba.ativa { background: var(--primario); color: #fff; }
+.status-caixa { font-size: 0.85rem; padding: 6px 12px; border-radius: 999px; }
+.status-caixa.fechado { background: #7f1d1d; color: #fecaca; }
+.status-caixa.aberto { background: #14532d; color: #bbf7d0; }
+
+main { flex: 1; overflow: hidden; padding: 16px; }
+.painel { display: none; height: 100%; }
+.painel.ativo { display: block; }
+#aba-venda { height: 100%; }
+
+.venda-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 16px;
+  height: 100%;
+}
+.col-esq, .col-dir {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.busca { position: relative; margin-bottom: 12px; }
+.busca input {
+  width: 100%;
+  padding: 12px;
+  font-size: 1.05rem;
+  border: 2px solid var(--borda);
+  border-radius: 8px;
+}
+.busca input:focus { outline: none; border-color: var(--primario); }
+.sugestoes {
+  position: absolute;
+  top: 100%;
+  left: 0; right: 0;
+  background: #fff;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.12);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 20;
+}
+.sugestoes div { padding: 10px 12px; cursor: pointer; display: flex; justify-content: space-between; }
+.sugestoes div:hover { background: #ecfdf5; }
+
+.catalogo {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+.card-produto {
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  transition: border-color .15s, transform .1s;
+}
+.card-produto:hover { border-color: var(--primario); transform: translateY(-1px); }
+.card-produto.sem-estoque { opacity: .45; cursor: not-allowed; }
+.card-produto .nome { font-weight: 600; font-size: .9rem; margin-bottom: 4px; }
+.card-produto .preco { color: var(--primario); font-weight: 700; }
+.card-produto .estoque { font-size: .75rem; color: #64748b; }
+
+.tabela { width: 100%; border-collapse: collapse; }
+.tabela th, .tabela td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--borda); }
+.tabela th { font-size: .78rem; text-transform: uppercase; color: #64748b; }
+#tabelaCarrinho { flex: 1; overflow-y: auto; display: block; }
+#tabelaCarrinho thead, #tabelaCarrinho tbody { display: block; }
+#tabelaCarrinho tbody { overflow-y: auto; max-height: calc(100% - 40px); }
+#tabelaCarrinho th:first-child, #tabelaCarrinho td:first-child { width: 45%; }
+#tabelaCarrinho th, #tabelaCarrinho td { display: inline-block; }
+#tabelaCarrinho thead th { width: 20%; }
+
+.qtd-ctrl { display: flex; align-items: center; gap: 6px; }
+.qtd-ctrl button {
+  width: 24px; height: 24px;
+  border: 1px solid var(--borda);
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.remover { color: var(--perigo); cursor: pointer; font-weight: 700; }
+
+.totais { margin-top: 12px; border-top: 2px solid var(--borda); padding-top: 12px; }
+.linha { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.linha input { width: 120px; padding: 8px; border: 1px solid var(--borda); border-radius: 6px; }
+.linha.total { font-size: 1.5rem; font-weight: 700; color: var(--primario); }
+
+.btn {
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.primario { background: var(--primario); color: #fff; }
+.btn.primario:hover:not(:disabled) { background: var(--primario-hover); }
+.btn.secundario { background: #e2e8f0; color: var(--texto); }
+.btn.perigo { background: var(--perigo); color: #fff; }
+.btn.grande { padding: 14px; font-size: 1.1rem; width: 100%; margin-bottom: 8px; }
+
+.barra { display: flex; gap: 10px; margin-bottom: 12px; }
+.barra input { flex: 1; padding: 10px; border: 1px solid var(--borda); border-radius: 8px; }
+#corProdutos tr:hover { background: #f8fafc; }
+.estoque-baixo { color: var(--perigo); font-weight: 700; }
+
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(15, 23, 42, .55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50;
+}
+.modal-caixa {
+  background: #fff;
+  border-radius: 12px;
+  padding: 22px;
+  width: min(440px, 92vw);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-caixa h2 { margin-bottom: 12px; }
+.total-modal { font-size: 1.2rem; margin-bottom: 12px; }
+.pag-form { display: flex; gap: 8px; margin-bottom: 12px; }
+.pag-form select, .pag-form input {
+  padding: 9px; border: 1px solid var(--borda); border-radius: 6px;
+}
+.pag-form select { flex: 1; }
+.pag-form input { width: 110px; }
+.lista-pag { list-style: none; margin-bottom: 12px; max-height: 140px; overflow-y: auto; }
+.lista-pag li {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 7px 10px; background: #f8fafc; border-radius: 6px; margin-bottom: 5px;
+}
+.modal-acoes { display: flex; gap: 10px; }
+.modal-acoes .btn { flex: 1; }
+
+#formProduto label { display: block; margin-bottom: 10px; font-size: .85rem; color: #475569; }
+#formProduto input, #formProduto select {
+  display: block; width: 100%; margin-top: 4px;
+  padding: 9px; border: 1px solid var(--borda); border-radius: 6px; font-size: 1rem;
+}
+.linha-dupla { display: flex; gap: 10px; }
+.linha-dupla label { flex: 1; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.card-resumo {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 16px;
+}
+.card-resumo .valor { font-size: 1.6rem; font-weight: 700; color: var(--primario); }
+.card-resumo .rotulo { font-size: .8rem; text-transform: uppercase; color: #64748b; }
+
+.caixa-acoes { display: flex; gap: 16px; }
+.caixa-form {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 18px;
+  width: 300px;
+}
+.caixa-form h3 { margin-bottom: 10px; }
+.caixa-form input {
+  display: block; width: 100%; margin-bottom: 10px;
+  padding: 9px; border: 1px solid var(--borda); border-radius: 6px;
+}
+.caixa-form p { margin-bottom: 10px; font-size: .9rem; color: #475569; }
+
+.cupom { display: none; }
+@media print {
+  body > header, body > main, .modal, .toast { display: none !important; }
+  .cupom { display: block; font-family: "Courier New", monospace; font-size: 12px; width: 72mm; margin: 0; }
+  .cupom-conteudo hr { border: none; border-top: 1px dashed #000; margin: 6px 0; }
+}
+
+.toast {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a; color: #fff;
+  padding: 12px 20px; border-radius: 8px;
+  z-index: 100; box-shadow: 0 8px 20px rgba(0,0,0,.3);
+}
+.toast.erro { background: var(--perigo); }
+.toast.ok { background: var(--verde); }
+
+.hidden { display: none !important; }

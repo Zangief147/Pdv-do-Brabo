@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDV — Ponto de Venda</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="logo">🛒 PDV Express</div>
+    <nav>
+      <button class="aba ativa" data-aba="venda">Venda</button>
+      <button class="aba" data-aba="produtos">Produtos</button>
+      <button class="aba" data-aba="historico">Histórico</button>
+      <button class="aba" data-aba="resumo">Resumo</button>
+    </nav>
+    <div id="statusCaixa" class="status-caixa fechado">Caixa fechado</div>
+  </header>
+
+  <main>
+    <!-- ===== VENDA ===== -->
+    <section id="aba-venda" class="painel ativo">
+      <div class="venda-grid">
+        <div class="col-esq">
+          <div class="busca">
+            <input id="inputBusca" type="text" autocomplete="off"
+                   placeholder="Código ou nome do produto + Enter">
+            <div id="sugestoes" class="sugestoes hidden"></div>
+          </div>
+          <div class="catalogo" id="catalogo"></div>
+        </div>
+
+        <div class="col-dir">
+          <table class="tabela" id="tabelaCarrinho">
+            <thead>
+              <tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Total</th><th></th></tr>
+            </thead>
+            <tbody id="corCarrinho"></tbody>
+          </table>
+          <div class="totais">
+            <div class="linha">
+              <label>Desconto (R$)</label>
+              <input id="inputDesconto" type="number" min="0" step="0.01" value="0">
+            </div>
+            <div class="linha subtotal"><span>Subtotal</span><span id="lblSubtotal">R$ 0,00</span></div>
+            <div class="linha total"><span>TOTAL</span><span id="lblTotal">R$ 0,00</span></div>
+            <button id="btnPagar" class="btn primario grande" disabled>Finalizar (F2)</button>
+            <button id="btnCancelar" class="btn secundario">Cancelar venda</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PRODUTOS ===== -->
+    <section id="aba-produtos" class="painel">
+      <div class="barra">
+        <input id="filtroProdutos" type="text" placeholder="Filtrar por código ou nome...">
+        <button id="btnNovoProduto" class="btn primario">+ Novo produto</button>
+      </div>
+      <table class="tabela">
+        <thead>
+          <tr><th>Código</th><th>Nome</th><th>Un.</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr>
+        </thead>
+        <tbody id="corProdutos"></tbody>
+      </table>
+    </section>
+
+    <!-- ===== HISTÓRICO ===== -->
+    <section id="aba-historico" class="painel">
+      <table class="tabela">
+        <thead>
+          <tr><th>#</th><th>Data</th><th>Itens</th><th>Total</th><th>Pagamento</th><th></th></tr>
+        </thead>
+        <tbody id="corHistorico"></tbody>
+      </table>
+    </section>
+
+    <!-- ===== RESUMO ===== -->
+    <section id="aba-resumo" class="painel">
+      <div class="cards" id="cardsResumo"></div>
+      <div class="caixa-acoes">
+        <div class="caixa-form" id="formAbrir">
+          <h3>Abrir caixa</h3>
+          <input id="inputFundo" type="number" min="0" step="0.01" placeholder="Fundo de troco (R$)">
+          <button id="btnAbrirCaixa" class="btn primario">Abrir</button>
+        </div>
+        <div class="caixa-form hidden" id="formFechar">
+          <h3>Caixa aberto</h3>
+          <p id="infoCaixa"></p>
+          <button id="btnFecharCaixa" class="btn perigo">Fechar caixa (sangria)</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== MODAL PAGAMENTO ===== -->
+  <div id="modalPagamento" class="modal hidden">
+    <div class="modal-caixa">
+      <h2>Pagamento</h2>
+      <p class="total-modal">Total: <strong id="totalModal"></strong></p>
+      <div class="pag-form">
+        <select id="selForma">
+          <option value="dinheiro">Dinheiro</option>
+          <option value="debito">Cartão débito</option>
+          <option value="credito">Cartão crédito</option>
+          <option value="pix">PIX</option>
+        </select>
+        <input id="inputValorPago" type="number" min="0" step="0.01" placeholder="Valor (R$)">
+        <button id="btnAddPagamento" class="btn secundario">Adicionar</button>
+      </div>
+      <ul id="listaPagamentos" class="lista-pag"></ul>
+      <div class="linha total"><span>Pago</span><span id="lblPago"></span></div>
+      <div class="linha subtotal"><span>Falta / Troco</span><span id="lblFalta"></span></div>
+      <div class="modal-acoes">
+        <button id="btnConfirmarVenda" class="btn primario" disabled>Confirmar venda</button>
+        <button id="btnFecharModal" class="btn secundario">Voltar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL PRODUTO ===== -->
+  <div id="modalProduto" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloProduto">Novo produto</h2>
+      <form id="formProduto">
+        <label>Código <input name="codigo" required placeholder="Ex.: 7890001"></label>
+        <label>Nome <input name="nome" required placeholder="Ex.: Arroz 5kg"></label>
+        <div class="linha-dupla">
+          <label>Unidade
+            <select name="unidade">
+              <option>UN</option><option>KG</option><option>LT</option><option>PCT</option><option>CX</option>
+            </select>
+          </label>
+          <label>Preço (R$) <input name="preco" type="number" min="0" step="0.01" required></label>
+        </div>
+        <label>Estoque <input name="estoque" type="number" min="0" step="0.001" value="0"></label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Salvar</button>
+          <button type="button" id="btnCancelarProduto" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== CUPOM (impressão) ===== -->
+  <div id="cupom" class="cupom">
+    <div class="cupom-conteudo"></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>
