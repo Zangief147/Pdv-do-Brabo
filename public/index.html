@@ -7,92 +7,177 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <div class="logo">🛒 PDV Express</div>
-    <nav>
-      <button class="aba ativa" data-aba="venda">Venda</button>
-      <button class="aba" data-aba="produtos">Produtos</button>
-      <button class="aba" data-aba="historico">Histórico</button>
-      <button class="aba" data-aba="resumo">Resumo</button>
-    </nav>
-    <div id="statusCaixa" class="status-caixa fechado">Caixa fechado</div>
-  </header>
+  <!-- ===== LOGIN / PRIMEIRO ACESSO ===== -->
+  <div id="telaLogin" class="login hidden">
+    <div class="login-caixa">
+      <h1>🛒 PDV Express</h1>
+      <div id="formLogin">
+        <label>Usuário <input id="inputLogin" autocomplete="username"></label>
+        <label>Senha <input id="inputSenha" type="password" autocomplete="current-password"></label>
+        <button id="btnLogin" class="btn primario grande">Entrar</button>
+      </div>
+      <div id="formSetup" class="hidden">
+        <p class="setup-aviso">Primeiro acesso: crie o usuário administrador.</p>
+        <label>Seu nome <input id="setupNome" autocomplete="off"></label>
+        <label>Login <input id="setupLogin" autocomplete="off"></label>
+        <label>Senha (mín. 4) <input id="setupSenha" type="password" autocomplete="new-password"></label>
+        <button id="btnSetup" class="btn primario grande">Criar administrador e entrar</button>
+      </div>
+      <p id="erroLogin" class="erro-msg hidden"></p>
+    </div>
+  </div>
 
-  <main>
-    <!-- ===== VENDA ===== -->
-    <section id="aba-venda" class="painel ativo">
-      <div class="venda-grid">
-        <div class="col-esq">
-          <div class="busca">
-            <input id="inputBusca" type="text" autocomplete="off"
-                   placeholder="Código ou nome do produto + Enter">
-            <div id="sugestoes" class="sugestoes hidden"></div>
-          </div>
-          <div class="catalogo" id="catalogo"></div>
-        </div>
+  <!-- ===== APP ===== -->
+  <div id="app" class="hidden">
+    <header>
+      <div class="logo">🛒 PDV Express</div>
+      <nav id="navAbas">
+        <button class="aba ativa" data-aba="venda">Venda</button>
+        <button class="aba" data-aba="produtos">Produtos</button>
+        <button class="aba" data-aba="historico">Histórico</button>
+        <button class="aba" data-aba="relatorios">Relatórios</button>
+        <button class="aba" data-aba="operadores">Operadores</button>
+        <button class="aba" data-aba="resumo">Caixa</button>
+        <button class="aba" data-aba="ajustes">Ajustes</button>
+      </nav>
+      <div id="statusCaixa" class="status-caixa fechado">Caixa fechado</div>
+      <div class="usuario-area">
+        <span id="lblUsuario"></span>
+        <button id="btnSair" class="btn-link">Sair</button>
+      </div>
+    </header>
 
-        <div class="col-dir">
-          <table class="tabela" id="tabelaCarrinho">
-            <thead>
-              <tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Total</th><th></th></tr>
-            </thead>
-            <tbody id="corCarrinho"></tbody>
-          </table>
-          <div class="totais">
-            <div class="linha">
-              <label>Desconto (R$)</label>
-              <input id="inputDesconto" type="number" min="0" step="0.01" value="0">
+    <main>
+      <!-- ===== VENDA ===== -->
+      <section id="aba-venda" class="painel ativo">
+        <div class="venda-grid">
+          <div class="col-esq">
+            <div class="busca">
+              <input id="inputBusca" type="text" autocomplete="off"
+                     placeholder="Código ou nome do produto + Enter (F1 foca aqui)">
+              <div id="sugestoes" class="sugestoes hidden"></div>
             </div>
-            <div class="linha subtotal"><span>Subtotal</span><span id="lblSubtotal">R$ 0,00</span></div>
-            <div class="linha total"><span>TOTAL</span><span id="lblTotal">R$ 0,00</span></div>
-            <button id="btnPagar" class="btn primario grande" disabled>Finalizar (F2)</button>
-            <button id="btnCancelar" class="btn secundario">Cancelar venda</button>
+            <div class="catalogo" id="catalogo"></div>
+          </div>
+
+          <div class="col-dir">
+            <table class="tabela" id="tabelaCarrinho">
+              <thead>
+                <tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Total</th><th></th></tr>
+              </thead>
+              <tbody id="corCarrinho"></tbody>
+            </table>
+            <div class="totais">
+              <div class="linha">
+                <label>Desconto (R$)</label>
+                <input id="inputDesconto" type="number" min="0" step="0.01" value="0">
+              </div>
+              <div class="linha">
+                <label>Cliente (opcional)</label>
+                <input id="inputCliente" type="text" placeholder="Nome do cliente">
+              </div>
+              <div class="linha subtotal"><span>Subtotal</span><span id="lblSubtotal">R$ 0,00</span></div>
+              <div class="linha total"><span>TOTAL</span><span id="lblTotal">R$ 0,00</span></div>
+              <button id="btnPagar" class="btn primario grande" disabled>Finalizar (F2)</button>
+              <button id="btnCancelar" class="btn secundario">Cancelar venda (F4)</button>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- ===== PRODUTOS ===== -->
-    <section id="aba-produtos" class="painel">
-      <div class="barra">
-        <input id="filtroProdutos" type="text" placeholder="Filtrar por código ou nome...">
-        <button id="btnNovoProduto" class="btn primario">+ Novo produto</button>
-      </div>
-      <table class="tabela">
-        <thead>
-          <tr><th>Código</th><th>Nome</th><th>Un.</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr>
-        </thead>
-        <tbody id="corProdutos"></tbody>
-      </table>
-    </section>
-
-    <!-- ===== HISTÓRICO ===== -->
-    <section id="aba-historico" class="painel">
-      <table class="tabela">
-        <thead>
-          <tr><th>#</th><th>Data</th><th>Itens</th><th>Total</th><th>Pagamento</th><th></th></tr>
-        </thead>
-        <tbody id="corHistorico"></tbody>
-      </table>
-    </section>
-
-    <!-- ===== RESUMO ===== -->
-    <section id="aba-resumo" class="painel">
-      <div class="cards" id="cardsResumo"></div>
-      <div class="caixa-acoes">
-        <div class="caixa-form" id="formAbrir">
-          <h3>Abrir caixa</h3>
-          <input id="inputFundo" type="number" min="0" step="0.01" placeholder="Fundo de troco (R$)">
-          <button id="btnAbrirCaixa" class="btn primario">Abrir</button>
+      <!-- ===== PRODUTOS ===== -->
+      <section id="aba-produtos" class="painel">
+        <div class="barra">
+          <input id="filtroProdutos" type="text" placeholder="Filtrar por código ou nome...">
+          <button id="btnNovoProduto" class="btn primario">+ Novo produto</button>
         </div>
-        <div class="caixa-form hidden" id="formFechar">
-          <h3>Caixa aberto</h3>
-          <p id="infoCaixa"></p>
-          <button id="btnFecharCaixa" class="btn perigo">Fechar caixa (sangria)</button>
+        <table class="tabela">
+          <thead>
+            <tr><th>Código</th><th>Nome</th><th>Un.</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="corProdutos"></tbody>
+        </table>
+      </section>
+
+      <!-- ===== HISTÓRICO ===== -->
+      <section id="aba-historico" class="painel">
+        <table class="tabela">
+          <thead>
+            <tr><th>#</th><th>Data</th><th>Itens</th><th>Total</th><th>Pagamento</th><th>Operador</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="corHistorico"></tbody>
+        </table>
+      </section>
+
+      <!-- ===== RELATÓRIOS ===== -->
+      <section id="aba-relatorios" class="painel">
+        <div class="barra">
+          <label class="campo-data">De <input id="repDe" type="date"></label>
+          <label class="campo-data">Até <input id="repAte" type="date"></label>
+          <button id="btnRepAtualizar" class="btn primario">Atualizar</button>
+          <button id="btnRepCSV" class="btn secundario">⬇ CSV</button>
+          <button id="btnRepImprimir" class="btn secundario">🖨 Imprimir</button>
         </div>
-      </div>
-    </section>
-  </main>
+        <div id="repConteudo"></div>
+      </section>
+
+      <!-- ===== OPERADORES ===== -->
+      <section id="aba-operadores" class="painel">
+        <div class="barra">
+          <button id="btnNovoOperador" class="btn primario">+ Novo operador</button>
+        </div>
+        <table class="tabela">
+          <thead>
+            <tr><th>Nome</th><th>Login</th><th>Cargo</th><th>Status</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="corOperadores"></tbody>
+        </table>
+      </section>
+
+      <!-- ===== CAIXA ===== -->
+      <section id="aba-resumo" class="painel scrollavel">
+        <div class="cards" id="cardsResumo"></div>
+        <div class="caixa-acoes">
+          <div class="caixa-form" id="formAbrir">
+            <h3>Abrir caixa</h3>
+            <input id="inputFundo" type="number" min="0" step="0.01" placeholder="Fundo de troco (R$)">
+            <button id="btnAbrirCaixa" class="btn primario">Abrir</button>
+          </div>
+          <div class="caixa-form hidden" id="formFechar">
+            <h3>Caixa aberto</h3>
+            <p id="infoCaixa"></p>
+            <button id="btnSangria" class="btn secundario">Sangria / Suprimento</button>
+            <button id="btnFecharCaixa" class="btn perigo">Fechar caixa</button>
+          </div>
+          <div class="caixa-form">
+            <h3>Movimentações do dia</h3>
+            <div id="listaMovimentacoes" class="lista-mov"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== AJUSTES ===== -->
+      <section id="aba-ajustes" class="painel scrollavel">
+        <div class="ajustes-grid">
+          <div class="caixa-form">
+            <h3>Loja (cupom)</h3>
+            <label class="lbl-interna">Nome <input id="cfgNome"></label>
+            <label class="lbl-interna">CNPJ <input id="cfgCnpj"></label>
+            <label class="lbl-interna">Endereço <input id="cfgEndereco"></label>
+            <label class="lbl-interna">Telefone <input id="cfgTelefone"></label>
+            <h3>Mensagem do cupom</h3>
+            <textarea id="cfgMensagem" rows="3"></textarea>
+            <button id="btnSalvarConfig" class="btn primario">Salvar</button>
+          </div>
+          <div class="caixa-form">
+            <h3>Manutenção</h3>
+            <p id="infoVersao"></p>
+            <button id="btnBackup" class="btn secundario">⬇ Baixar backup do banco</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <!-- ===== MODAL PAGAMENTO ===== -->
   <div id="modalPagamento" class="modal hidden">
@@ -143,10 +228,70 @@
     </div>
   </div>
 
-  <!-- ===== CUPOM (impressão) ===== -->
+  <!-- ===== MODAL OPERADOR ===== -->
+  <div id="modalOperador" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloOperador">Novo operador</h2>
+      <form id="formOperador">
+        <label>Nome <input name="nome" required></label>
+        <label>Login <input name="login" required autocomplete="off"></label>
+        <label id="lblSenhaObr">Senha (mín. 4) <input name="senha" type="password" autocomplete="new-password"></label>
+        <label>Cargo
+          <select name="role">
+            <option value="operador">Operador (vende e opera caixa)</option>
+            <option value="admin">Administrador (acesso total)</option>
+          </select>
+        </label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Salvar</button>
+          <button type="button" id="btnCancelarOperador" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL MOVIMENTAÇÃO ===== -->
+  <div id="modalMov" class="modal hidden">
+    <div class="modal-caixa">
+      <h2>Sangria / Suprimento</h2>
+      <form id="formMov">
+        <label>Tipo
+          <select name="tipo">
+            <option value="sangria">Sangria (retirar dinheiro)</option>
+            <option value="suprimento">Suprimento (colocar dinheiro)</option>
+          </select>
+        </label>
+        <label>Valor (R$) <input name="valor" type="number" min="0.01" step="0.01" required></label>
+        <label>Motivo <input name="motivo" placeholder="Ex.: depósito no banco"></label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Registrar</button>
+          <button type="button" id="btnCancelarMov" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL FECHAR CAIXA ===== -->
+  <div id="modalFecharCaixa" class="modal hidden">
+    <div class="modal-caixa">
+      <h2>Fechar caixa</h2>
+      <p id="fcEsperado"></p>
+      <form id="formFecharCaixa">
+        <label>Dinheiro contado (R$) <input id="fcContado" type="number" min="0" step="0.01"></label>
+        <p id="fcDiferenca" class="fc-diferenca"></p>
+        <div class="modal-acoes">
+          <button type="submit" class="btn perigo">Confirmar fechamento</button>
+          <button type="button" id="btnCancelarFechar" class="btn secundario">Voltar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== CUPOM / RELATÓRIO (impressão) ===== -->
   <div id="cupom" class="cupom">
     <div class="cupom-conteudo"></div>
   </div>
+  <div id="relImpressao" class="relatorio-print"></div>
 
   <div id="toast" class="toast hidden"></div>
   <script src="app.js"></script>
