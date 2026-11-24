@@ -158,7 +158,7 @@ const assert = (cond, msg) => {
   assert(r.body.numVendas === 1 && r.body.faturamento === 49.8, 'fechamento consolida período');
 
   r = await req('POST', 'vendas', { itens: [ { produtoId: 1, qtd: 1 } ] }, tokenMaria);
-  assert(r.status === 400 && r.body.erro === 'Abra o caixa antes de vender', 'venda com caixa fechado rejeitada');
+  assert(r.status === 400 && r.body.erro.includes('Abra o seu caixa antes de vender'), 'venda com caixa fechado rejeitada');
 
   r = await req('PUT', `operadores/${idMaria}`, { senha: '4321' }, tokenAdmin);
   assert(r.status === 200, 'senha de operador trocada');
@@ -216,7 +216,7 @@ const assert = (cond, msg) => {
   r = await req('POST', 'vendas', { itens: [ { produtoId: 1, qtd: 1, precoUnit: 24.9 } ], pagamentos: [ { forma: 'fiado', valor: 50 }, { forma: 'dinheiro', valor: 50 } ], clienteId: idAna }, tokenBruno);
   assert(r.status === 400 && r.body.erro.includes('Troco não pode ser financiado'), 'fiado financiando troco rejeitado');
 
-  r = await req('POST', `clientes/${idJoao}/receber`, { valor: 12.4, forma: 'dinheiro' }, tokenAdmin);
+  r = await req('POST', `clientes/${idJoao}/receber`, { valor: 12.4, forma: 'dinheiro' }, tokenBruno);
   assert(r.status === 200 && r.body.saldo === 30, `recebimento parcial (${r.body.saldo})`);
 
   r = await req('GET', 'resumo', null, tokenBruno);
@@ -261,6 +261,68 @@ const assert = (cond, msg) => {
   r = await req('POST', 'caixa/fechar', { dinheiroContado: 79.4 }, tokenBruno);
   if (r.status !== 200) console.log('INFO fechamento:', JSON.stringify(r.body));
   assert(r.status === 200 && r.body.dinheiroEsperado === 79.4 && r.body.diferenca === 0, `fechamento final com caixa batido (esperado ${r.body ? r.body.dinheiroEsperado : '?'})`);
+
+  /* ============ v4: multi-caixa, custos/lucro, auditoria ============ */
+
+  r = await req('POST', 'produtos', { codigo: '7890500', nome: 'Café Torrado', preco: 15, custo: 10, estoque: 10 }, tokenAdmin);
+  assert(r.status === 201 && r.body.custo === 10, 'produto criado com custo');
+  const idCafe = r.body.id;
+
+  r = await req('PUT', `produtos/${idCafe}`, { codigo: '7890500', nome: 'Café Torrado', preco: 15, custo: 8, estoque: 10 }, tokenAdmin);
+  assert(r.status === 200 && r.body.custo === 8, 'custo atualizado via PUT');
+
+  r = await req('GET', 'auditoria', null, tokenBruno);
+  assert(r.status === 403, 'auditoria negada para operador');
+
+  r = await req('GET', `relatorios?de=${hoje}&ate=${hoje}`, null, tokenAdmin);
+  const lucroAntes = r.body.lucroEstimado;
+
+  r = await req('POST', 'caixa/abrir', { fundo: 20 }, tokenBruno);
+  assert(r.status === 200, 'Bruno abre o caixa dele');
+  r = await req('POST', 'caixa/abrir', { fundo: 10 }, tokenAdmin);
+  assert(r.status === 200, 'admin abre caixa próprio com caixa de Bruno aberto');
+
+  r = await req('GET', 'resumo', null, tokenAdmin);
+  assert(r.body.aberto === true, 'resumo mostra caixa próprio aberto');
+  assert(Array.isArray(r.body.caixasAbertos) && r.body.caixasAbertos.length === 2, `dois caixas abertos no resumo (${JSON.stringify(r.body.caixasAbertos)})`);
+  const caixaBrunoResumo = r.body.caixasAbertos.find((c) => c.abertoPor === 'Bruno');
+  const caixaAdminResumo = r.body.caixasAbertos.find((c) => c.abertoPor === 'Chefe');
+  assert(caixaBrunoResumo && caixaBrunoResumo.fundo === 20 && caixaBrunoResumo.dinheiro === 20, 'caixa de Bruno visível com fundo/dinheiro');
+  assert(caixaAdminResumo && caixaAdminResumo.fundo === 10, 'caixa do admin visível no resumo');
+
+  r = await req('POST', 'vendas', { itens: [ { produtoId: idCafe, qtd: 2 } ], pagamentos: [ { forma: 'dinheiro', valor: 50 } ] }, tokenAdmin);
+  assert(r.status === 201 && r.body.troco === 20, 'venda do admin no caixa dele');
+  assert(r.body.itens[0].custoUnit === 8, 'item guarda custoUnit do momento da venda');
+
+  r = await req('POST', 'vendas', { itens: [ { produtoId: idCafe, qtd: 1 } ], pagamentos: [ { forma: 'dinheiro', valor: 15 } ] }, tokenBruno);
+  assert(r.status === 201, 'venda do Bruno no caixa dele');
+
+  r = await req('GET', 'resumo', null, tokenAdmin);
+  assert(r.body.dinheiroEsperado === 40, `dinheiro esperado isolado (admin: ${r.body.dinheiroEsperado})`);
+  r = await req('GET', 'resumo', null, tokenBruno);
+  assert(r.body.dinheiroEsperado === 35, `dinheiro esperado isolado (Bruno: ${r.body.dinheiroEsperado})`);
+
+  r = await req('POST', 'caixa/fechar', { dinheiroContado: 40 }, tokenAdmin);
+  assert(r.status === 200 && r.body.diferenca === 0 && r.body.fechadoPor === 'Chefe', 'admin fecha somente o próprio caixa');
+
+  r = await req('GET', 'resumo', null, tokenBruno);
+  assert(r.body.aberto === true, 'caixa de Bruno segue aberto (multi-caixa independente)');
+
+  r = await req('GET', `relatorios?de=${hoje}&ate=${hoje}`, null, tokenAdmin);
+  assert(r.body.lucroEstimado === lucroAntes + 21, `lucro estimado = antes + 21 (agora ${r.body.lucroEstimado})`);
+  const diaHoje = r.body.porDia[r.body.porDia.length - 1];
+  assert(diaHoje.lucro === r.body.lucroEstimado, 'lucro por dia agregado no relatório');
+
+  r = await req('GET', 'auditoria?limite=50', null, tokenAdmin);
+  assert(r.status === 200 && Array.isArray(r.body) && r.body.length > 0 && r.body[0].acao, 'auditoria lista eventos para admin');
+  assert(r.body.some((e) => e.acao === 'venda' && e.usuario === 'Chefe'), 'evento de venda registrado na auditoria');
+  assert(r.body.some((e) => e.acao === 'produto-criado'), 'evento de produto criado registrado');
+
+  r = await req('POST', 'caixa/fechar', { dinheiroContado: 35 }, tokenBruno);
+  assert(r.status === 200 && r.body.diferenca === 0, 'Bruno fecha o caixa dele');
+
+  r = await req('GET', 'resumo', null, tokenAdmin);
+  assert((r.body.caixasAbertos || []).length === 0, 'nenhum caixa aberto após fechamentos');
 
   r = await req('GET', 'saude');
   assert(r.status === 200 && r.body.precisaSetup === false, 'saúde após setup');

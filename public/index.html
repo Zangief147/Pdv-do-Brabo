@@ -96,7 +96,7 @@
         </div>
         <table class="tabela">
           <thead>
-            <tr><th>Código</th><th>Nome</th><th>Un.</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr>
+            <tr><th>Código</th><th>Nome</th><th>Un.</th><th>Preço</th><th>Custo</th><th>Estoque</th><th>Ações</th></tr>
           </thead>
           <tbody id="corProdutos"></tbody>
         </table>
@@ -152,6 +152,7 @@
       <!-- ===== CAIXA ===== -->
       <section id="aba-resumo" class="painel scrollavel">
         <div class="cards" id="cardsResumo"></div>
+        <div id="caixasAbertos"></div>
         <div class="caixa-acoes">
           <div class="caixa-form" id="formAbrir">
             <h3>Abrir caixa</h3>
@@ -183,6 +184,10 @@
             <h3>Mensagem do cupom</h3>
             <textarea id="cfgMensagem" rows="3"></textarea>
             <button id="btnSalvarConfig" class="btn primario">Salvar</button>
+          </div>
+          <div class="caixa-form">
+            <h3>Auditoria</h3>
+            <div id="listaAuditoria" class="lista-mov" style="max-height:420px;overflow:auto"></div>
           </div>
           <div class="caixa-form">
             <h3>Manutenção</h3>
@@ -352,7 +357,7 @@
   <div id="modalImportar" class="modal hidden">
     <div class="modal-caixa">
       <h2>Importar produtos (CSV)</h2>
-      <p style="font-size:.85rem;color:#64748b;margin-bottom:8px">Uma linha por produto: <code>codigo;nome;preco;estoque;unidade</code>. Produtos com código existente são atualizados.</p>
+      <p style="font-size:.85rem;color:#64748b;margin-bottom:8px">Uma linha por produto: <code>codigo;nome;preco;estoque;unidade;custo</code>. Produtos com código existente são atualizados.</p>
       <textarea id="csvTexto" rows="8" style="width:100%;font-family:monospace;font-size:.85rem;padding:8px;border:1px solid var(--borda);border-radius:6px" placeholder="7890001;Arroz 5kg;24.90;50;PCT&#10;7890002;Café 500g;18.50;30;PCT"></textarea>
       <div style="margin-top:10px" class="modal-acoes">
         <button id="btnConfirmarImportar" class="btn primario">Importar</button>

@@ -39,6 +39,10 @@ function migrar(dados) {
   if (!d.sessoes || typeof d.sessoes !== 'object') d.sessoes = {};
   if (!d.caixa || typeof d.caixa !== 'object') d.caixa = base.caixa;
   if (!Array.isArray(d.caixa.movimentacoes)) d.caixa.movimentacoes = [];
+  if (!d.caixas || typeof d.caixas !== 'object' || Array.isArray(d.caixas)) d.caixas = {};
+  if (d.caixa.aberto && !d.caixas.legado) {
+    d.caixas.legado = d.caixa;
+  }
   if (!d.configuracao || typeof d.configuracao !== 'object') d.configuracao = base.configuracao;
   if (!d.configuracao.loja || typeof d.configuracao.loja !== 'object') d.configuracao.loja = base.configuracao.loja;
   if (!d.configuracao.cupom || typeof d.configuracao.cupom !== 'object') d.configuracao.cupom = base.configuracao.cupom;
@@ -63,4 +67,4 @@ function salvar() {
   fs.renameSync(tmp, DB_FILE);
 }
 
-module.exports = { carregar, salvar, DB_FILE };
+module.exports = { carregar, salvar, DB_FILE, DATA_DIR };

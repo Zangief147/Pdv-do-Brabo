@@ -4,15 +4,17 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { carregar, salvar, DB_FILE } = require('./db');
+const { carregar, salvar, DB_FILE, DATA_DIR } = require('./db');
 
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const VERSAO = '3.0.0';
+const VERSAO = '4.0.0';
 const SESSAO_MS = 12 * 60 * 60 * 1000;
 const LOGIN_MAX_TENTATIVAS = Number(process.env.PDV_LOGIN_MAX_TENTATIVAS) || 8;
 const LOGIN_JANELA_MS = Number(process.env.PDV_LOGIN_JANELA_MS) || 5 * 60 * 1000;
 const BACKUPS_DIR = path.join(__dirname, 'data', 'backups');
+const AUDITORIA_FILE = path.join(DATA_DIR, 'auditoria.log');
 const MAX_BACKUPS = 30;
 const tentativasLogin = new Map();
 
@@ -62,6 +64,28 @@ function lerCorpo(req) {
     });
     req.on('error', reject);
   });
+}
+
+function audit(usuario, acao, detalhe = {}) {
+  try {
+    fs.appendFileSync(AUDITORIA_FILE, JSON.stringify({
+      data: new Date().toISOString(),
+      usuario: usuario ? usuario.nome : '-',
+      acao,
+      ...detalhe,
+    }) + '\n');
+  } catch {}
+}
+
+function lerAuditoria(limite = 100) {
+  try {
+    const linhas = fs.readFileSync(AUDITORIA_FILE, 'utf8').trim().split('\n');
+    return linhas.slice(-limite).reverse().map((l) => {
+      try { return JSON.parse(l); } catch { return { data: null, usuario: '?', acao: l }; }
+    });
+  } catch {
+    return [];
+  }
 }
 
 /* ================= autenticação ================= */
@@ -129,24 +153,76 @@ function exigirAdmin(ctx, res) {
   return true;
 }
 
-/* ================= caixa ================= */
+/* ================= caixas (um por operador) ================= */
 
-function dinheiroEsperado() {
+function caixaDe(usuarioId, criar = true) {
   const db = carregar();
-  if (!db.caixa.aberto) return 0;
-  const inicio = new Date(db.caixa.aberturaEm).getTime();
-  let espera = Number(db.caixa.fundo) || 0;
-  for (const m of db.caixa.movimentacoes) {
+  if (!db.caixas) db.caixas = {};
+  if (!db.caixas[usuarioId] && criar) {
+    db.caixas[usuarioId] = { aberto: false, fundo: 0, aberturaEm: null, abertoPor: null, movimentacoes: [] };
+  }
+  return db.caixas[usuarioId];
+}
+
+function caixaJSON(c) {
+  return {
+    aberto: c.aberto,
+    fundo: brl(c.fundo),
+    aberturaEm: c.aberturaEm,
+    abertoPor: c.abertoPor,
+    movimentacoes: c.movimentacoes.slice(-50),
+  };
+}
+
+function dinheiroEsperado(usuarioId) {
+  const db = carregar();
+  const caixa = caixaDe(usuarioId, false);
+  if (!caixa || !caixa.aberto) return 0;
+  const inicio = new Date(caixa.aberturaEm).getTime();
+  let espera = Number(caixa.fundo) || 0;
+  for (const m of caixa.movimentacoes) {
     espera += m.tipo === 'suprimento' ? m.valor : -m.valor;
   }
   for (const v of db.vendas) {
     if (v.canceladaEm) continue;
+    if (v.usuarioId !== usuarioId) continue;
     if (new Date(v.data).getTime() < inicio) continue;
     for (const p of v.pagamentos) {
       if (p.forma === 'dinheiro') espera += p.valor - (v.troco || 0);
     }
   }
   return brl(espera);
+}
+
+function fecharCaixa(operador, dinheiroContado) {
+  const db = carregar();
+  const caixa = caixaDe(operador.id, false);
+  if (!caixa || !caixa.aberto) throw new Error('Seu caixa já está fechado');
+  const esperado = dinheiroEsperado(operador.id);
+  const contado = Number.isFinite(dinheiroContado) ? brl(dinheiroContado) : null;
+  const inicio = new Date(caixa.aberturaEm).getTime();
+  const doPeriodo = db.vendas.filter(
+    (v) => v.usuarioId === operador.id && !v.canceladaEm && new Date(v.data).getTime() >= inicio
+  );
+  const registro = {
+    id: db.seqFechamento++,
+    aberturaEm: caixa.aberturaEm,
+    fechadoEm: new Date().toISOString(),
+    abertoPor: caixa.abertoPor,
+    fechadoPor: operador.nome,
+    fundo: brl(caixa.fundo),
+    movimentacoes: caixa.movimentacoes,
+    numVendas: doPeriodo.length,
+    faturamento: brl(doPeriodo.reduce((s, v) => s + v.total, 0)),
+    dinheiroEsperado: esperado,
+    dinheiroContado: contado,
+    diferenca: contado === null ? null : brl(contado - esperado),
+  };
+  db.fechamentos.push(registro);
+  db.caixas[operador.id] = { aberto: false, fundo: 0, aberturaEm: null, abertoPor: null, movimentacoes: [] };
+  salvar();
+  backupAuto(registro.id);
+  return registro;
 }
 
 function backupAuto(rotulo) {
@@ -161,35 +237,7 @@ function backupAuto(rotulo) {
   } catch {}
 }
 
-function fecharCaixa(operador, dinheiroContado) {
-  const db = carregar();
-  if (!db.caixa.aberto) throw new Error('Caixa já está fechado');
-  const esperado = dinheiroEsperado();
-  const contado = Number.isFinite(dinheiroContado) ? brl(dinheiroContado) : null;
-  const inicio = new Date(db.caixa.aberturaEm).getTime();
-  const doPeriodo = db.vendas.filter((v) => !v.canceladaEm && new Date(v.data).getTime() >= inicio);
-  const registro = {
-    id: db.seqFechamento++,
-    aberturaEm: db.caixa.aberturaEm,
-    fechadoEm: new Date().toISOString(),
-    abertoPor: db.caixa.abertoPor,
-    fechadoPor: operador.nome,
-    fundo: brl(db.caixa.fundo),
-    movimentacoes: db.caixa.movimentacoes,
-    numVendas: doPeriodo.length,
-    faturamento: brl(doPeriodo.reduce((s, v) => s + v.total, 0)),
-    dinheiroEsperado: esperado,
-    dinheiroContado: contado,
-    diferenca: contado === null ? null : brl(contado - esperado),
-  };
-  db.fechamentos.push(registro);
-  db.caixa = { aberto: false, fundo: 0, aberturaEm: null, abertoPor: null, movimentacoes: [] };
-  salvar();
-  backupAuto(registro.id);
-  return registro;
-}
-
-/* ================= venda / relatórios ================= */
+/* ================= entidades ================= */
 
 function vendaJSON(v) {
   return {
@@ -216,6 +264,7 @@ function produtoJSON(p) {
     codigo: p.codigo,
     nome: p.nome,
     preco: p.preco,
+    custo: brl(p.custo || 0),
     estoque: p.estoque,
     unidade: p.unidade || 'UN',
   };
@@ -240,6 +289,7 @@ function validarProduto(p) {
   if (!Number.isFinite(preco) || preco < 0) return 'Preço inválido';
   const estoque = Number(p.estoque ?? 0);
   if (!Number.isFinite(estoque) || estoque < 0) return 'Estoque inválido';
+  if (p.custo !== undefined && (!Number.isFinite(Number(p.custo)) || Number(p.custo) < 0)) return 'Custo inválido';
   return null;
 }
 
@@ -266,22 +316,26 @@ function relatorio(inicio, fim) {
   const topProdutos = new Map();
   for (const v of validas) {
     const dia = v.data.slice(0, 10);
-    per(porDia, dia, v.total, 1);
+    const lucroVenda = v.itens.reduce((ls, i) => ls + (i.total - i.qtd * (i.custoUnit || 0)), 0);
+    per(porDia, dia, v.total, 1, lucroVenda);
     for (const p of v.pagamentos) per(porForma, p.forma, p.valor, 0);
     for (const i of v.itens) per(topProdutos, i.nome, i.total, i.qtd);
   }
   const faturamento = brl(validas.reduce((s, v) => s + v.total, 0));
+  const lucro = brl(validas.reduce((s, v) => s + v.itens.reduce(
+    (ls, i) => ls + (i.total - (i.qtd * (i.custoUnit || 0))), 0), 0));
   return {
     de: new Date(inicio).toISOString().slice(0, 10),
     ate: new Date(fim).toISOString().slice(0, 10),
     numVendas: validas.length,
     numCanceladas: canceladas.length,
     faturamento,
+    lucroEstimado: lucro,
     descontos: brl(validas.reduce((s, v) => s + v.desconto, 0)),
     ticketMedio: validas.length ? brl(faturamento / validas.length) : 0,
     porForma: Object.fromEntries([...porForma].map(([forma, d]) => [forma, d.total])),
     porDia: [...porDia.entries()]
-      .map(([dia, d]) => ({ dia, total: d.total, vendas: d.num }))
+      .map(([dia, d]) => ({ dia, total: d.total, vendas: d.num, lucro: d.lucro || 0 }))
       .sort((a, b) => a.dia.localeCompare(b.dia)),
     topProdutos: [...topProdutos.entries()]
       .map(([nome, d]) => ({ nome, total: d.total, qtd: Math.round(d.num * 1000) / 1000 }))
@@ -303,9 +357,13 @@ function relatorio(inicio, fim) {
       })),
   };
 
-  function per(mapa, chave, total, num) {
-    const atual = mapa.get(chave) || { total: 0, num: 0 };
-    mapa.set(chave, { total: brl(atual.total + total), num: atual.num + num });
+  function per(mapa, chave, total, num, lucroItem = 0) {
+    const atual = mapa.get(chave) || { total: 0, num: 0, lucro: 0 };
+    mapa.set(chave, {
+      total: brl(atual.total + total),
+      num: atual.num + num,
+      lucro: brl(atual.lucro + lucroItem),
+    });
   }
 }
 
@@ -358,6 +416,7 @@ async function rotear(req, res, url) {
     const corpo = await lerCorpo(req);
     if (!corpo.senha) return json(res, 400, { erro: 'Senha obrigatória' });
     const usuario = criarUsuario({ ...corpo, role: 'admin' });
+    audit(usuario, 'setup', { novo: usuario.login });
     return json(res, 201, { token: abrirSessao(usuario), usuario: usuarioJSON(usuario) });
   }
 
@@ -380,6 +439,7 @@ async function rotear(req, res, url) {
       return json(res, 401, { erro: restam > 0 ? `Login ou senha incorretos (${restam} tentativas restantes)` : 'Muitas tentativas. Aguarde antes de tentar novamente' });
     }
     tentativasLogin.delete(ip);
+    audit(usuario, 'login', { ip });
     return json(res, 200, { token: abrirSessao(usuario), usuario: usuarioJSON(usuario) });
   }
 
@@ -411,6 +471,7 @@ async function rotear(req, res, url) {
     }
     if (typeof corpo.cupom?.mensagem === 'string') db.configuracao.cupom.mensagem = corpo.cupom.mensagem.trim();
     salvar();
+    audit(usuario, 'config-alterada');
     return json(res, 200, { configuracao: db.configuracao });
   }
 
@@ -425,12 +486,15 @@ async function rotear(req, res, url) {
     return res.end(conteudo);
   }
 
-  if (pathname === '/api/resumo' && method === 'GET') {
-    return json(res, 200, resumo());
+  if (pathname === '/api/auditoria' && method === 'GET') {
+    if (!exigirAdmin({ usuario }, res)) return;
+    const limite = Math.min(Number(url.searchParams.get('limite')) || 100, 500);
+    return json(res, 200, lerAuditoria(limite));
   }
 
   function resumo() {
     const dbLocal = carregar();
+    const propria = caixaDe(usuario.id, false);
     const agora = new Date();
     const inicioDia = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
     const doDia = dbLocal.vendas.filter((v) => !v.canceladaEm && new Date(v.data).getTime() >= inicioDia);
@@ -440,13 +504,27 @@ async function rotear(req, res, url) {
         porForma[p.forma] = brl((porForma[p.forma] || 0) + p.valor);
       }
     }
+    const caixasAbertos = [];
+    for (const [uid, caixa] of Object.entries(dbLocal.caixas || {})) {
+      if (caixa.aberto) {
+        caixasAbertos.push({
+          usuarioId: Number(uid),
+          abertoPor: caixa.abertoPor,
+          fundo: brl(caixa.fundo),
+          dinheiro: dinheiroEsperado(Number(uid)),
+          aberturaEm: caixa.aberturaEm,
+        });
+      }
+    }
     return {
-      aberto: dbLocal.caixa.aberto,
-      fundo: brl(dbLocal.caixa.fundo),
-      aberturaEm: dbLocal.caixa.aberturaEm,
-      abertoPor: dbLocal.caixa.abertoPor,
-      dinheiroEsperado: dinheiroEsperado(),
-      movimentacoes: dbLocal.caixa.movimentacoes.slice(-50),
+      caixa: caixaJSON(propria || { aberto: false, fundo: 0 }),
+      aberto: !!propria?.aberto,
+      fundo: brl(propria?.fundo || 0),
+      aberturaEm: propria?.aberturaEm || null,
+      abertoPor: propria?.abertoPor || null,
+      dinheiroEsperado: dinheiroEsperado(usuario.id),
+      caixasAbertos,
+      movimentacoes: propria?.movimentacoes.slice(-50) || [],
       vendas: doDia.length,
       canceladasHoje: dbLocal.vendas.filter((v) => v.canceladaEm && new Date(v.canceladaEm).getTime() >= inicioDia).length,
       faturamento: brl(doDia.reduce((s, v) => s + v.total, 0)),
@@ -455,24 +533,31 @@ async function rotear(req, res, url) {
     };
   }
 
+  if (pathname === '/api/resumo' && method === 'GET') {
+    return json(res, 200, resumo());
+  }
+
   if (pathname === '/api/caixa/abrir' && method === 'POST') {
-    if (db.caixa.aberto) return json(res, 400, { erro: 'Caixa já está aberto' });
+    const propria = caixaDe(usuario.id);
+    if (propria.aberto) return json(res, 400, { erro: 'Seu caixa já está aberto' });
     const corpo = await lerCorpo(req);
-    db.caixa = {
+    Object.assign(propria, {
       aberto: true,
       fundo: brl(Math.max(0, Number(corpo.fundo) || 0)),
       aberturaEm: new Date().toISOString(),
       abertoPor: usuario.nome,
       movimentacoes: [],
-    };
+    });
     salvar();
-    return json(res, 200, { aberto: true, fundo: db.caixa.fundo, aberturaEm: db.caixa.aberturaEm, abertoPor: usuario.nome });
+    audit(usuario, 'caixa-aberto', { fundo: propria.fundo });
+    return json(res, 200, caixaJSON(propria));
   }
 
   if (pathname === '/api/caixa/fechar' && method === 'POST') {
     try {
       const corpo = await lerCorpo(req);
       const registro = fecharCaixa(usuario, corpo.dinheiroContado);
+      audit(usuario, 'caixa-fechado', { diferenca: registro.diferenca, numVendas: registro.numVendas });
       return json(res, 200, registro);
     } catch (err) {
       return json(res, 400, { erro: err.message });
@@ -480,24 +565,25 @@ async function rotear(req, res, url) {
   }
 
   if (pathname === '/api/caixa/movimentacao' && method === 'POST') {
-    if (!db.caixa.aberto) return json(res, 400, { erro: 'Caixa fechado' });
+    const propria = caixaDe(usuario.id, false);
+    if (!propria || !propria.aberto) return json(res, 400, { erro: 'Seu caixa está fechado' });
     const corpo = await lerCorpo(req);
     const tipo = corpo.tipo === 'suprimento' ? 'suprimento' : 'sangria';
     const valor = brl(Number(corpo.valor));
     if (!Number.isFinite(valor) || valor <= 0) return json(res, 400, { erro: 'Valor inválido' });
-    if (tipo === 'sangria' && valor > dinheiroEsperado()) {
+    if (tipo === 'sangria' && valor > dinheiroEsperado(usuario.id)) {
       return json(res, 400, { erro: 'Sangria maior que o dinheiro disponível' });
     }
-    const mov = { id: db.caixa.movimentacoes.length + 1, tipo, valor, motivo: String(corpo.motivo || '').trim(), usuario: usuario.nome, data: new Date().toISOString() };
-    db.caixa.movimentacoes.push(mov);
+    const mov = { id: propria.movimentacoes.length + 1, tipo, valor, motivo: String(corpo.motivo || '').trim(), usuario: usuario.nome, data: new Date().toISOString() };
+    propria.movimentacoes.push(mov);
     salvar();
+    audit(usuario, `caixa-${tipo}`, { valor, motivo: mov.motivo });
     return json(res, 201, mov);
   }
 
   if (pathname === '/api/produtos' && method === 'GET') {
     return json(res, 200, db.produtos.map(produtoJSON));
   }
-
 
   if (pathname === '/api/produtos' && method === 'POST') {
     if (!exigirAdmin({ usuario }, res)) return;
@@ -512,12 +598,14 @@ async function rotear(req, res, url) {
       codigo: String(p.codigo).trim(),
       nome: String(p.nome).trim(),
       preco: brl(p.preco),
+      custo: brl(Number(p.custo) || 0),
       estoque: Number(p.estoque ?? 0),
       unidade: String(p.unidade || 'UN').trim().toUpperCase(),
       ativo: true,
     };
     db.produtos.push(produto);
     salvar();
+    audit(usuario, 'produto-criado', { codigo: produto.codigo });
     return json(res, 201, produtoJSON(produto));
   }
 
@@ -540,6 +628,7 @@ async function rotear(req, res, url) {
         codigo: String(p.codigo).trim(),
         nome: String(p.nome).trim(),
         preco: brl(p.preco),
+        custo: brl(Number(p.custo ?? db.produtos[idx].custo) || 0),
         estoque: Number(p.estoque ?? 0),
         unidade: String(p.unidade || 'UN').trim().toUpperCase(),
       };
@@ -551,6 +640,7 @@ async function rotear(req, res, url) {
       if (!exigirAdmin({ usuario }, res)) return;
       db.produtos.splice(idx, 1);
       salvar();
+      audit(usuario, 'produto-excluido', { id });
       return json(res, 204, null);
     }
   }
@@ -564,6 +654,7 @@ async function rotear(req, res, url) {
     if (!Number.isFinite(qtd) || qtd <= 0) return json(res, 400, { erro: 'Quantidade inválida' });
     produto.estoque = brl(produto.estoque + qtd);
     salvar();
+    audit(usuario, 'entrada-estoque', { produto: produto.codigo, qtd });
     return json(res, 200, produtoJSON(produto));
   }
 
@@ -578,7 +669,7 @@ async function rotear(req, res, url) {
     let atualizados = 0;
     const erros = [];
     linhas.forEach((linha, i) => {
-      const [codigo, nome, preco, estoque, unidade] = linha.split(/[;,\t]/).map((f) => (f || '').trim());
+      const [codigo, nome, preco, estoque, unidade, custo] = linha.split(/[;,\t]/).map((f) => (f || '').trim());
       if (!codigo || !nome || !Number.isFinite(Number(preco))) {
         erros.push({ linha: i + 1, motivo: 'código, nome e preço numérico são obrigatórios' });
         return;
@@ -589,6 +680,7 @@ async function rotear(req, res, url) {
         preco: brl(preco),
         estoque: Number.isFinite(Number(estoque)) ? Number(estoque) : 0,
         unidade: (unidade || 'UN').toUpperCase(),
+        custo: brl(Number(custo) || 0),
       };
       const existente = db.produtos.find((x) => x.codigo === codigo);
       if (existente) {
@@ -600,6 +692,7 @@ async function rotear(req, res, url) {
       }
     });
     salvar();
+    audit(usuario, 'produtos-importados', { criados, atualizados, erros: erros.length });
     return json(res, 200, { criados, atualizados, erros });
   }
 
@@ -670,9 +763,10 @@ async function rotear(req, res, url) {
     const forma = String(corpo.forma || 'dinheiro');
     cliente.saldo = brl(cliente.saldo - valor);
     cliente.movimentos.push({ data: new Date().toISOString(), tipo: 'credito', valor, forma, motivo: String(corpo.motivo || 'Recebimento').trim() });
-    if (forma === 'dinheiro' && db.caixa.aberto) {
-      db.caixa.movimentacoes.push({
-        id: db.caixa.movimentacoes.length + 1,
+    const propria = caixaDe(usuario.id, false);
+    if (forma === 'dinheiro' && propria && propria.aberto) {
+      propria.movimentacoes.push({
+        id: propria.movimentacoes.length + 1,
         tipo: 'suprimento',
         valor,
         motivo: `Recebimento fiado: ${cliente.nome}`,
@@ -681,6 +775,7 @@ async function rotear(req, res, url) {
       });
     }
     salvar();
+    audit(usuario, 'fiado-recebido', { cliente: cliente.nome, valor, forma });
     return json(res, 200, clienteJSON(cliente));
   }
 
@@ -691,7 +786,8 @@ async function rotear(req, res, url) {
   }
 
   if (pathname === '/api/vendas' && method === 'POST') {
-    if (!db.caixa.aberto) return json(res, 400, { erro: 'Abra o caixa antes de vender' });
+    const propria = caixaDe(usuario.id, false);
+    if (!propria || !propria.aberto) return json(res, 400, { erro: 'Abra o seu caixa antes de vender' });
     const corpo = await lerCorpo(req);
     const itens = Array.isArray(corpo.itens) ? corpo.itens : [];
     if (!itens.length) return json(res, 400, { erro: 'Venda sem itens' });
@@ -718,6 +814,7 @@ async function rotear(req, res, url) {
       unidade: produto.unidade,
       qtd,
       precoUnit: produto.preco,
+      custoUnit: produto.custo || 0,
       total: brl(qtd * produto.preco),
     }));
 
@@ -755,6 +852,7 @@ async function rotear(req, res, url) {
     const venda = {
       id: db.seqVenda++,
       data: new Date().toISOString(),
+      usuarioId: usuario.id,
       itens: itensVenda,
       subtotal,
       desconto,
@@ -773,6 +871,7 @@ async function rotear(req, res, url) {
     }
     db.vendas.push(venda);
     salvar();
+    audit(usuario, 'venda', { id: venda.id, total, desconto });
     return json(res, 201, vendaJSON(venda));
   }
 
@@ -798,6 +897,7 @@ async function rotear(req, res, url) {
     venda.canceladaPor = usuario.nome;
     venda.motivoCancelamento = String(corpo.motivo || '').trim();
     salvar();
+    audit(usuario, 'venda-cancelada', { id: venda.id, motivo: venda.motivoCancelamento, fiado: valorFiado });
     return json(res, 200, vendaJSON(venda));
   }
 
@@ -837,6 +937,7 @@ async function rotear(req, res, url) {
     try {
       const dados = await lerCorpo(req);
       const novo = criarUsuario(dados);
+      audit(usuario, 'operador-criado', { login: novo.login, role: novo.role });
       return json(res, 201, usuarioJSON(novo));
     } catch (err) {
       return json(res, 400, { erro: err.message });
@@ -878,6 +979,7 @@ async function rotear(req, res, url) {
         }
       }
       salvar();
+      audit(usuario, 'operador-alterado', { id, login: alvo.login });
       return json(res, 200, usuarioJSON(alvo));
     }
 
@@ -888,6 +990,7 @@ async function rotear(req, res, url) {
         if (s.usuarioId === id) delete db.sessoes[tok];
       }
       salvar();
+      audit(usuario, 'operador-excluido', { id, login: alvo.login });
       return json(res, 204, null);
     }
   }
@@ -934,7 +1037,7 @@ server.on('error', (err) => {
   process.exit(1);
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, HOST, () => {
   console.log(`PDV v${VERSAO} rodando em http://localhost:${PORT}`);
 });
 

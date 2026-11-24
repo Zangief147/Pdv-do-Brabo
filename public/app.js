@@ -494,6 +494,7 @@ async function renderProdutos(filtro = '') {
         <td>${escapar(p.nome)}</td>
         <td>${escapar(p.unidade)}</td>
         <td>${brl(p.preco)}</td>
+        <td>${brl(p.custo || 0)}</td>
         <td class="${p.estoque <= 3 ? 'estoque-baixo' : ''}">${p.estoque}</td>
         <td>
           ${estado.usuario.role === 'admin' ? `<button class="btn secundario mini" data-entrada="${p.id}">＋ Estq</button>` : ''}
@@ -576,6 +577,7 @@ function abrirModalProduto(id = null) {
     form.nome.value = p.nome;
     form.unidade.value = p.unidade;
     form.preco.value = p.preco;
+    form.custo.value = p.custo ?? 0;
     form.estoque.value = p.estoque;
   }
   modal('modalProduto', true);
@@ -593,6 +595,7 @@ $('#formProduto').addEventListener('submit', async (e) => {
     nome: form.nome.value,
     unidade: form.unidade.value,
     preco: Number(form.preco.value),
+    custo: Number(form.custo.value) || 0,
     estoque: Number(form.estoque.value) || 0,
   };
   try {
@@ -847,6 +850,7 @@ async function atualizarRelatorio() {
     $('#repConteudo').innerHTML = `
       <div class="cards">
         <div class="card-resumo"><div class="rotulo">Faturamento</div><div class="valor">${brl(r.faturamento)}</div></div>
+        ${estado.usuario.role === 'admin' ? `<div class="card-resumo"><div class="rotulo">Lucro estimado</div><div class="valor">${brl(r.lucroEstimado || 0)}</div></div>` : ''}
         <div class="card-resumo"><div class="rotulo">Vendas</div><div class="valor">${r.numVendas}</div></div>
         <div class="card-resumo"><div class="rotulo">Ticket médio</div><div class="valor">${brl(r.ticketMedio)}</div></div>
         <div class="card-resumo"><div class="rotulo">Descontos</div><div class="valor">${brl(r.descontos)}</div></div>
@@ -863,8 +867,8 @@ async function atualizarRelatorio() {
       </div>` : ''}
       <div class="rep-secao">
         <h3>Faturamento por dia</h3>
-        <table class="trep"><thead><tr><th>Data</th><th>Vendas</th><th>Total</th></tr></thead><tbody>
-          ${r.porDia.map((d) => `<tr><td>${new Date(d.dia + 'T12:00').toLocaleDateString('pt-BR')}</td><td>${d.vendas}</td><td class="num">${brl(d.total)}</td></tr>`).join('') || '<tr><td colspan="3" style="color:#94a3b8">Sem vendas no período</td></tr>'}
+        <table class="trep"><thead><tr><th>Data</th><th>Vendas</th><th>Total</th>${estado.usuario.role === 'admin' ? '<th>Lucro est.</th>' : ''}</tr></thead><tbody>
+          ${r.porDia.map((d) => `<tr><td>${new Date(d.dia + 'T12:00').toLocaleDateString('pt-BR')}</td><td>${d.vendas}</td><td class="num">${brl(d.total)}</td>${estado.usuario.role === 'admin' ? `<td class="num">${brl(d.lucro || 0)}</td>` : ''}</tr>`).join('') || '<tr><td colspan="4" style="color:#94a3b8">Sem vendas no período</td></tr>'}
         </tbody></table>
       </div>
       <div class="rep-secao">
@@ -910,8 +914,8 @@ $('#btnRepImprimir').addEventListener('click', () => {
       <tr><th>Faturamento</th><td>${brl(r.faturamento)}</td><th>Ticket médio</th><td>${brl(r.ticketMedio)}</td></tr>
       ${Object.entries(r.porForma).map(([f, v]) => `<tr><th>${f}</th><td>${brl(v)}</td><td colspan="2"></td></tr>`).join('')}
     </tbody></table>
-    <table><thead><tr><th>Data</th><th>Vendas</th><th>Total</th></tr></thead><tbody>
-      ${r.porDia.map((d) => `<tr><td>${new Date(d.dia + 'T12:00').toLocaleDateString('pt-BR')}</td><td>${d.vendas}</td><td>${brl(d.total)}</td></tr>`).join('')}
+    <table><thead><tr><th>Data</th><th>Vendas</th><th>Total</th>${estado.usuario.role === 'admin' ? '<th>Lucro est.</th>' : ''}</tr></thead><tbody>
+      ${r.porDia.map((d) => `<tr><td>${new Date(d.dia + 'T12:00').toLocaleDateString('pt-BR')}</td><td>${d.vendas}</td><td>${brl(d.total)}</td>${estado.usuario.role === 'admin' ? `<td>${brl(d.lucro || 0)}</td>` : ''}</tr>`).join('')}
     </tbody></table>
     <table><thead><tr><th>Produto</th><th>Qtd</th><th>Total</th></tr></thead><tbody>
       ${r.topProdutos.map((p) => `<tr><td>${escapar(p.nome)}</td><td>${p.qtd}</td><td>${brl(p.total)}</td></tr>`).join('')}
@@ -1047,6 +1051,13 @@ async function carregarResumo() {
         `<div><span class="${m.tipo}">${m.tipo === 'sangria' ? '−' : '+'} ${brl(m.valor)}</span><span>${escapar(m.motivo || m.tipo)}</span></div>`
       ).join('')
     : '<div style="color:#94a3b8">Nenhuma</div>';
+
+  const caixas = r.caixasAbertos || [];
+  $('#caixasAbertos').innerHTML = caixas.length
+    ? `<div class="caixa-form"><h3>Caixas abertos agora (${caixas.length})</h3>
+        ${caixas.map((c) => `<div>👤 <strong>${escapar(c.abertoPor || '?')}</strong></div>`).join('')}
+      </div>`
+    : '';
 }
 
 $('#btnAbrirCaixa').addEventListener('click', async () => {
@@ -1142,6 +1153,19 @@ async function carregarAjustes() {
   $('#cfgTelefone').value = configuracao.loja.telefone || '';
   $('#cfgMensagem').value = configuracao.cupom.mensagem || '';
   $('#infoVersao').textContent = `Versão do sistema: ${versao} · Dados em data/db.json`;
+
+  if (estado.usuario.role === 'admin') {
+    try {
+      const eventos = await api('auditoria?limite=100');
+      $('#listaAuditoria').innerHTML = eventos.length
+        ? eventos.map((e) =>
+            `<div><span style="color:#94a3b8;font-size:.78rem">${e.data ? new Date(e.data).toLocaleString('pt-BR') : ''}</span> <strong>${escapar(e.usuario)}</strong></div>`
+          ).join('')
+        : '<div style="color:#94a3b8">Sem registros ainda</div>';
+    } catch {
+      $('#listaAuditoria').innerHTML = '<div style="color:#94a3b8">Indisponível</div>';
+    }
+  }
 }
 
 $('#btnSalvarConfig').addEventListener('click', async () => {
