@@ -1,4 +1,4 @@
-# PDV Express — Ponto de Venda v4.1
+# PDV Express — Ponto de Venda v4.2
 
 PDV web completo com **zero dependências externas**: exige apenas Node.js 18+.
 
@@ -10,7 +10,23 @@ node server.js
 
 Abra `http://localhost:3000` no navegador.
 
-> Porta/host alternativos: `PORT=4000 HOST=0.0.0.0 node server.js` · Testes: `node teste.js`
+> Porta/host alternativos: `PORT=4000 HOST=0.0.0.0 node server.js` · Testes: `node teste.js` · Executável: `node construir-exe.js`
+
+## Executável (sem instalar Node)
+
+Quer um **arquivo único que abre o PDV com dois cliques**? Com Node.js 22+ instalado na sua máquina de construção:
+
+```bash
+node construir-exe.js
+```
+
+O resultado fica em `dist/` — um executável por sistema (Windows/macOS/Linux), com a interface embutida no binário. Ao rodar:
+
+- o PDV sobe e **abre o navegador sozinho**
+- os dados ficam na pasta `data/` **ao lado do executável** (fácil de copiar/backup)
+- funciona offline, sem instalar nada na máquina do caixa
+
+Nada de gerar em casa? O GitHub Actions (`.github/workflows/exe.yml`) constrói os três executáveis automaticamente a cada push e guarda em **Artifacts** do workflow: `pdv-windows-latest` (o `.exe`), `pdv-ubuntu-latest` e `pdv-macos-latest`.
 
 ## Primeiro acesso
 
@@ -61,6 +77,7 @@ pdv/
 ├── server.js        # API REST + servidor estático (http puro)
 ├── db.js            # persistência JSON (inclui migração de caixa único → multi-caixa)
 ├── teste.js         # 112 testes end-to-end
+├── construir-exe.js # gera o executável único (SEA do Node 22)
 ├── data/db.json     # base de dados (gerado em runtime)
 ├── data/auditoria.log  # trilha de auditoria (JSON por linha)
 └── public/

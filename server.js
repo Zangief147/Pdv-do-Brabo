@@ -5,11 +5,13 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { carregar, salvar, DB_FILE, DATA_DIR } = require('./db');
+const sea = require('node:sea');
+const ehSea = sea.isSea();
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const VERSAO = '4.1.0';
+const VERSAO = '4.2.0';
 const SESSAO_MS = 12 * 60 * 60 * 1000;
 const LOGIN_MAX_TENTATIVAS = Number(process.env.PDV_LOGIN_MAX_TENTATIVAS) || 8;
 const LOGIN_JANELA_MS = Number(process.env.PDV_LOGIN_JANELA_MS) || 5 * 60 * 1000;
@@ -1089,6 +1091,24 @@ async function rotear(req, res, url) {
 
 function servirArquivo(res, pathname) {
   const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+  const mime = MIME[path.extname(rel).toLowerCase()] || 'application/octet-stream';
+  if (ehSea) {
+    let embutido = null;
+    try { embutido = sea.getAsset(rel); } catch (err) {
+      if (process.env.PDV_DEBUG_SEA) console.error('[SEA] ativo', rel, err && err.message);
+    }
+    const dados = embutido ? Buffer.from(embutido) : null;
+    if (dados && dados.length) {
+      res.writeHead(200, {
+        'Content-Type': mime,
+        'Cache-Control': 'no-cache',
+        'Content-Length': dados.length,
+      });
+      return res.end(dados);
+    }
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Não encontrado');
+    return;
+  }
   const arquivo = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!arquivo.startsWith(PUBLIC_DIR)) {
     res.writeHead(403).end('Proibido');
@@ -1099,10 +1119,7 @@ function servirArquivo(res, pathname) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Não encontrado');
       return;
     }
-    res.writeHead(200, {
-      'Content-Type': MIME[path.extname(arquivo).toLowerCase()] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
-    });
+    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-cache' });
     res.end(dados);
   });
 }
@@ -1127,7 +1144,28 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`PDV v${VERSAO} rodando em http://localhost:${PORT}`);
+  const endereco = `http://localhost:${PORT}`;
+  console.log(`PDV v${VERSAO} rodando em ${endereco}`);
+  if (ehSea && process.env.PDV_DEBUG_SEA) {
+    for (const chave of ['index.html', 'app.js', 'style.css']) {
+      let bytes = null;
+      try { bytes = Buffer.from(sea.getAsset(chave)).length; } catch (err) { bytes = `ERRO: ${err && err.message}`; }
+      console.log(`[SEA] ${chave}:`, bytes);
+    }
+  }
+  if (ehSea) {
+    try {
+      const { spawn } = require('child_process');
+      const comandos = {
+        win32: ['cmd', ['/c', 'start', '', endereco]],
+        darwin: ['open', [endereco]],
+      };
+      const [caminho, args] = comandos[process.platform] || ['xdg-open', [endereco]];
+      const navegador = spawn(caminho, args, { stdio: 'ignore', detached: true });
+      navegador.on('error', () => {});
+      navegador.unref();
+    } catch {}
+  }
 });
 
 for (const sinal of ['SIGINT', 'SIGTERM']) {

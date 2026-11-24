@@ -3,7 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, 'data');
+const sea = require('node:sea');
+const BASE_DIR = sea.isSea() ? path.dirname(process.execPath) : __dirname;
+const DATA_DIR = path.join(BASE_DIR, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 const padrao = () => ({

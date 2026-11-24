@@ -1,0 +1,35 @@
+name: Executáveis
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Testes end-to-end
+        shell: bash
+        run: |
+          rm -rf data
+          node teste.js
+
+      - name: Construir executável
+        run: node construir-exe.js
+
+      - name: Publicar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdv-${{ matrix.os }}
+          path: dist/

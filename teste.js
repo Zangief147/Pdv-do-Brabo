@@ -354,7 +354,7 @@ const assert = (cond, msg) => {
 
   r = await req('GET', 'configuracao', null, tokenBruno);
   assert(r.status === 200 && String(r.body.configuracao.loja.logo || '').startsWith('data:'), 'logo vai para o cupom do operador');
-  assert(r.body.versao === '4.1.0', `versão 4.1.0 (${r.body.versao})`);
+  assert(r.body.versao === '4.2.0', `versão 4.2.0 (${r.body.versao})`);
 
   r = await req('GET', 'saude');
   assert(r.status === 200 && r.body.precisaSetup === false, 'saúde após setup');
