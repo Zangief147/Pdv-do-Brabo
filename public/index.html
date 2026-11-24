@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDV — Ponto de Venda</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛒</text></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -34,6 +35,7 @@
       <nav id="navAbas">
         <button class="aba ativa" data-aba="venda">Venda</button>
         <button class="aba" data-aba="produtos">Produtos</button>
+        <button class="aba" data-aba="clientes">Clientes</button>
         <button class="aba" data-aba="historico">Histórico</button>
         <button class="aba" data-aba="relatorios">Relatórios</button>
         <button class="aba" data-aba="operadores">Operadores</button>
@@ -73,8 +75,8 @@
                 <input id="inputDesconto" type="number" min="0" step="0.01" value="0">
               </div>
               <div class="linha">
-                <label>Cliente (opcional)</label>
-                <input id="inputCliente" type="text" placeholder="Nome do cliente">
+                <label>Cliente (fiado)</label>
+                <select id="selCliente" style="flex:1;padding:8px;border:1px solid var(--borda);border-radius:6px;max-width:220px"><option value="">— sem cliente —</option></select>
               </div>
               <div class="linha subtotal"><span>Subtotal</span><span id="lblSubtotal">R$ 0,00</span></div>
               <div class="linha total"><span>TOTAL</span><span id="lblTotal">R$ 0,00</span></div>
@@ -89,6 +91,7 @@
       <section id="aba-produtos" class="painel">
         <div class="barra">
           <input id="filtroProdutos" type="text" placeholder="Filtrar por código ou nome...">
+          <button id="btnImportar" class="btn secundario">⤓ Importar CSV</button>
           <button id="btnNovoProduto" class="btn primario">+ Novo produto</button>
         </div>
         <table class="tabela">
@@ -96,6 +99,18 @@
             <tr><th>Código</th><th>Nome</th><th>Un.</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr>
           </thead>
           <tbody id="corProdutos"></tbody>
+        </table>
+      </section>
+
+      <!-- ===== CLIENTES ===== -->
+      <section id="aba-clientes" class="painel">
+        <div class="barra">
+          <input id="filtroClientes" type="text" placeholder="Filtrar por nome ou telefone...">
+          <button id="btnNovoCliente" class="btn primario">+ Novo cliente</button>
+        </div>
+        <table class="tabela">
+          <thead><tr><th>Nome</th><th>Telefone</th><th>Saldo fiado</th><th>Ações</th></tr></thead>
+          <tbody id="corClientes"></tbody>
         </table>
       </section>
 
@@ -190,6 +205,7 @@
           <option value="debito">Cartão débito</option>
           <option value="credito">Cartão crédito</option>
           <option value="pix">PIX</option>
+          <option value="fiado">Fiado (a receber)</option>
         </select>
         <input id="inputValorPago" type="number" min="0" step="0.01" placeholder="Valor (R$)">
         <button id="btnAddPagamento" class="btn secundario">Adicionar</button>
@@ -268,6 +284,80 @@
           <button type="button" id="btnCancelarMov" class="btn secundario">Cancelar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL CLIENTE ===== -->
+  <div id="modalCliente" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloCliente">Novo cliente</h2>
+      <form id="formCliente">
+        <label>Nome <input name="nome" required></label>
+        <label>Telefone <input name="telefone" placeholder="(11) 99999-0000"></label>
+        <label>Observações <input name="obs" placeholder="Ex.: cliente da padaria"></label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Salvar</button>
+          <button type="button" id="btnCancelarCliente" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL RECEBER FIADO ===== -->
+  <div id="modalReceber" class="modal hidden">
+    <div class="modal-caixa">
+      <h2>Receber fiado</h2>
+      <p id="recInfo"></p>
+      <form id="formReceber">
+        <label>Valor (R$) <input name="valor" type="number" min="0.01" step="0.01" required></label>
+        <label>Forma
+          <select name="forma">
+            <option value="dinheiro">Dinheiro (entra no caixa)</option>
+            <option value="pix">PIX</option>
+            <option value="debito">Cartão débito</option>
+          </select>
+        </label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Registrar recebimento</button>
+          <button type="button" id="btnCancelarReceber" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL EXTRATO FIADO ===== -->
+  <div id="modalExtrato" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloExtrato">Extrato</h2>
+      <div id="conteudoExtrato"></div>
+      <div class="modal-acoes"><button type="button" id="btnFecharExtrato" class="btn secundario">Fechar</button></div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL ENTRADA ESTOQUE ===== -->
+  <div id="modalEntrada" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloEntrada">Entrada de estoque</h2>
+      <form id="formEntrada">
+        <label>Quantidade recebida <input name="qtd" type="number" min="0.001" step="0.001" required></label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Adicionar</button>
+          <button type="button" id="btnCancelarEntrada" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL IMPORTAR CSV ===== -->
+  <div id="modalImportar" class="modal hidden">
+    <div class="modal-caixa">
+      <h2>Importar produtos (CSV)</h2>
+      <p style="font-size:.85rem;color:#64748b;margin-bottom:8px">Uma linha por produto: <code>codigo;nome;preco;estoque;unidade</code>. Produtos com código existente são atualizados.</p>
+      <textarea id="csvTexto" rows="8" style="width:100%;font-family:monospace;font-size:.85rem;padding:8px;border:1px solid var(--borda);border-radius:6px" placeholder="7890001;Arroz 5kg;24.90;50;PCT&#10;7890002;Café 500g;18.50;30;PCT"></textarea>
+      <div style="margin-top:10px" class="modal-acoes">
+        <button id="btnConfirmarImportar" class="btn primario">Importar</button>
+        <button id="btnCancelarImportar" class="btn secundario">Cancelar</button>
+      </div>
     </div>
   </div>
 

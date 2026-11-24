@@ -108,7 +108,7 @@ async function iniciarApp() {
   } catch {
     estado.cfg = { loja: {}, cupom: {} };
   }
-  await carregarCatalogo();
+  await Promise.all([carregarCatalogo(), carregarClientes().catch(() => null)]);
   const r = await api('resumo').catch(() => null);
   if (r) atualizarStatusCaixa(r.aberto);
 }
@@ -170,6 +170,7 @@ $('#btnSair').addEventListener('click', async () => {
 
 const carregadoresPorAba = {
   produtos: carregarAbaProdutos,
+  clientes: carregarClientes,
   historico: carregarHistorico,
   relatorios: carregarRelatorio,
   operadores: carregarOperadores,
@@ -232,6 +233,18 @@ function renderCatalogo(filtro = '') {
 async function buscaRapida() {
   const termo = $('#inputBusca').value.trim();
   if (!termo) return;
+  if (/^2\d{12}$/.test(termo)) {
+    const codigoInterno = termo.slice(1, 6);
+    const gramas = Number(termo.slice(6, 11));
+    const produto = estado.produtos.find((p) => p.codigo === codigoInterno);
+    if (!produto) return toast(`Produto de balança ${codigoInterno} não cadastrado`, 'erro');
+    if (produto.estoque < gramas / 1000) return toast(`Estoque insuficiente de "${produto.nome}"`, 'erro');
+    adicionarQtd(produto.id, gramas / 1000);
+    $('#inputBusca').value = '';
+    renderCatalogo('');
+    toast(`⚖ ${gramas}g de ${produto.nome}`, 'ok');
+    return;
+  }
   const resultados = await api(`produtos/busca?q=${encodeURIComponent(termo)}`);
   if (resultados.length === 1) {
     if (resultados[0].estoque <= 0) return toast(`"${resultados[0].nome}" sem estoque`, 'erro');
@@ -254,16 +267,27 @@ $('#inputBusca').addEventListener('input', (e) => renderCatalogo(e.target.value)
 function adicionarAoCarrinho(id, delta) {
   const produto = estado.produtos.find((p) => p.id === id);
   if (!produto) return;
+  qtdArredondada(id, produto, delta);
+  renderCarrinho();
+}
+
+function adicionarQtd(id, qtd) {
+  const produto = estado.produtos.find((p) => p.id === id);
+  if (!produto) return;
+  qtdArredondada(id, produto, qtd - (estado.carrinho.get(id) || 0));
+  renderCarrinho();
+}
+
+function qtdArredondada(id, produto, delta) {
   const atual = estado.carrinho.get(id) || 0;
-  const novaQtd = atual + delta;
+  const novaQtd = Math.round((atual + delta) * 1000) / 1000;
   if (novaQtd <= 0) {
     estado.carrinho.delete(id);
   } else if (novaQtd > produto.estoque) {
-    return toast(`Estoque insuficiente (${produto.estoque} ${produto.unidade})`, 'erro');
+    toast(`Estoque insuficiente (${produto.estoque} ${produto.unidade})`, 'erro');
   } else {
     estado.carrinho.set(id, novaQtd);
   }
-  renderCarrinho();
 }
 
 function subtotalCarrinho() {
@@ -318,7 +342,7 @@ $('#btnCancelar').addEventListener('click', () => {
   if (estado.carrinho.size && !confirm('Cancelar a venda atual?')) return;
   estado.carrinho.clear();
   $('#inputDesconto').value = 0;
-  $('#inputCliente').value = '';
+  $('#selCliente').value = '';
   renderCarrinho();
 });
 
@@ -359,10 +383,11 @@ $('#btnAddPagamento').addEventListener('click', () => {
   if (!Number.isFinite(valor) || valor <= 0) return toast('Informe um valor válido', 'erro');
   const total = totalComDesconto();
   const pago = estado.pagamentos.reduce((s, p) => s + p.valor, 0);
-  if (pago + valor > total + 0.001 && $('#selForma').value !== 'dinheiro') {
-    return toast('Troco só é permitido em dinheiro', 'erro');
+  const forma = $('#selForma').value;
+  if (pago + valor > total + 0.001 && forma !== 'dinheiro') {
+    return toast(forma === 'fiado' ? 'Fiado não gera troco' : 'Troco só é permitido em dinheiro', 'erro');
   }
-  estado.pagamentos.push({ forma: $('#selForma').value, valor });
+  estado.pagamentos.push({ forma, valor });
   $('#inputValorPago').value = '';
   renderPagamentos();
   $('#inputValorPago').focus();
@@ -383,13 +408,13 @@ $('#btnConfirmarVenda').addEventListener('click', async () => {
         })),
         desconto: Number($('#inputDesconto').value) || 0,
         pagamentos: estado.pagamentos,
-        cliente: $('#inputCliente').value,
+        clienteId: $('#selCliente').value ? Number($('#selCliente').value) : undefined,
       },
     });
     modal('modalPagamento', false);
     estado.carrinho.clear();
     $('#inputDesconto').value = 0;
-    $('#inputCliente').value = '';
+    $('#selCliente').value = '';
     await carregarCatalogo();
     imprimirCupom(venda);
     toast(`Venda #${venda.id} concluída!`, 'ok');
@@ -470,14 +495,73 @@ async function renderProdutos(filtro = '') {
         <td>${escapar(p.unidade)}</td>
         <td>${brl(p.preco)}</td>
         <td class="${p.estoque <= 3 ? 'estoque-baixo' : ''}">${p.estoque}</td>
-        <td><button class="btn secundario mini" data-editar="${p.id}">Editar</button></td>
+        <td>
+          ${estado.usuario.role === 'admin' ? `<button class="btn secundario mini" data-entrada="${p.id}">＋ Estq</button>` : ''}
+          <button class="btn secundario mini" data-editar="${p.id}">Editar</button>
+        </td>
       </tr>`
     )
     .join('');
   $('#corProdutos').querySelectorAll('[data-editar]').forEach((b) =>
     b.addEventListener('click', () => abrirModalProduto(Number(b.dataset.editar)))
   );
+  $('#corProdutos').querySelectorAll('[data-entrada]').forEach((b) =>
+    b.addEventListener('click', () => abrirModalEntrada(Number(b.dataset.entrada)))
+  );
 }
+
+function abrirModalEntrada(id) {
+  const produto = estado.produtos.find((p) => p.id === id);
+  if (!produto) return;
+  estado.produtoEntrada = id;
+  $('#formEntrada').reset();
+  $('#tituloEntrada').textContent = `Entrada de estoque — ${produto.nome} (atual: ${produto.estoque})`;
+  modal('modalEntrada', true);
+  $('#formEntrada').qtd.focus();
+}
+
+$('#btnCancelarEntrada').addEventListener('click', () => modal('modalEntrada', false));
+
+$('#formEntrada').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const p = await api(`produtos/${estado.produtoEntrada}/entrada`, {
+      method: 'POST',
+      body: { qtd: Number(e.target.qtd.value) },
+    });
+    modal('modalEntrada', false);
+    toast(`Estoque de "${p.nome}" agora: ${p.estoque}`, 'ok');
+    await carregarProdutos();
+    renderProdutos($('#filtroProdutos').value);
+  } catch (err) {
+    toast(err.message, 'erro');
+  }
+});
+
+$('#btnImportar').addEventListener('click', () => {
+  $('#csvTexto').value = '';
+  modal('modalImportar', true);
+});
+
+$('#btnCancelarImportar').addEventListener('click', () => modal('modalImportar', false));
+
+$('#btnConfirmarImportar').addEventListener('click', async () => {
+  try {
+    const resultado = await api('produtos/importar', {
+      method: 'POST',
+      body: { csv: $('#csvTexto').value },
+    });
+    modal('modalImportar', false);
+    toast(`${resultado.criados} criado(s), ${resultado.atualizados} atualizado(s)` +
+      (resultado.erros.length ? `, ${resultado.erros.length} erro(s)` : ''),
+      resultado.erros.length ? 'erro' : 'ok');
+    if (resultado.erros.length) console.warn('Erros de importação:', resultado.erros);
+    await carregarProdutos();
+    renderProdutos($('#filtroProdutos').value);
+  } catch (err) {
+    toast(err.message, 'erro');
+  }
+});
 
 $('#filtroProdutos').addEventListener('input', (e) => renderProdutos(e.target.value));
 
@@ -527,6 +611,171 @@ $('#formProduto').addEventListener('submit', async (e) => {
     toast(err.message, 'erro');
   }
 });
+
+function graficoDias(porDia) {
+  const max = Math.max(...porDia.map((d) => d.total), 1);
+  const largura = 100;
+  const altura = 28;
+  const passo = porDia.length > 1 ? largura / porDia.length : largura;
+  const barras = porDia.map((d, i) => {
+    const h = Math.max(1, (d.total / max) * (altura - 5));
+    const x = (i * passo + passo * 0.15).toFixed(2);
+    const w = (passo * 0.7).toFixed(2);
+    const y = (altura - h).toFixed(2);
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h.toFixed(2)}" rx="0.6" fill="var(--primario)"></rect>` +
+      `<title>${new Date(d.dia + 'T12:00').toLocaleDateString('pt-BR')}: ${brl(d.total)}</title>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${ largura } ${ altura }" preserveAspectRatio="none" style="width:100%;height:130px;background:#fff;border:1px solid var(--borda);border-radius:10px">${barras}</svg>`;
+}
+
+/* ---------- clientes / fiado ---------- */
+
+let clientesCache = [];
+
+async function carregarClientes() {
+  clientesCache = await api('clientes');
+  renderClientes($('#filtroClientes').value);
+  atualizarSelectClientes();
+  return clientesCache;
+}
+
+function atualizarSelectClientes(selecionado) {
+  const sel = $('#selCliente');
+  const atual = selecionado || sel.value;
+  sel.innerHTML = '<option value="">— sem cliente —</option>' +
+    clientesCache.map((c) => `<option value="${c.id}">${escapar(c.nome)}${c.saldo > 0 ? ` (deve ${brl(c.saldo)})` : ''}</option>`).join('');
+  if (atual) sel.value = atual;
+}
+
+function renderClientes(filtro = '') {
+  const termo = filtro.trim().toLowerCase();
+  const lista = clientesCache.filter((c) => !termo || c.nome.toLowerCase().includes(termo) || (c.telefone || '').includes(termo));
+  const totalFiado = clientesCache.reduce((s, c) => s + c.saldo, 0);
+  $('#corClientes').innerHTML =
+    `<tr style="background:#fffbeb"><td colspan="4"><strong>Fiado a receber: ${brl(totalFiado)}</strong> em ${clientesCache.filter((c) => c.saldo > 0).length} cliente(s)</td></tr>` +
+    (lista.map((c) => `
+      <tr class="${c.saldo > 0 ? '' : 'inativo'}">
+        <td>${escapar(c.nome)}</td>
+        <td>${escapar(c.telefone)}</td>
+        <td class="${c.saldo > 0 ? 'estoque-baixo' : ''}">${brl(c.saldo)}</td>
+        <td>
+          <button class="btn primario mini" data-receber="${c.id}" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Receber</button>
+          <button class="btn secundario mini" data-extrato="${c.id}">Extrato</button>
+          <button class="btn secundario mini" data-edit-c="${c.id}">Editar</button>
+          ${estado.usuario.role === 'admin' ? `<button class="btn perigo mini" data-del-c="${c.id}">✕</button>` : ''}
+        </td>
+      </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#94a3b8">Nenhum cliente cadastrado</td></tr>');
+  $('#corClientes').querySelectorAll('[data-receber]').forEach((b) =>
+    b.addEventListener('click', () => abrirReceber(Number(b.dataset.receber)))
+  );
+  $('#corClientes').querySelectorAll('[data-extrato]').forEach((b) =>
+    b.addEventListener('click', () => abrirExtrato(Number(b.dataset.extrato)))
+  );
+  $('#corClientes').querySelectorAll('[data-edit-c]').forEach((b) =>
+    b.addEventListener('click', () => abrirModalCliente(Number(b.dataset.editC)))
+  );
+  $('#corClientes').querySelectorAll('[data-del-c]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      if (!confirm('Excluir este cliente?')) return;
+      try {
+        await api(`clientes/${b.dataset.delC}`, { method: 'DELETE' });
+        toast('Cliente excluído', 'ok');
+        carregarClientes();
+      } catch (err) {
+        toast(err.message, 'erro');
+      }
+    })
+  );
+}
+
+$('#filtroClientes').addEventListener('input', (e) => renderClientes(e.target.value));
+
+function abrirModalCliente(id = null) {
+  estado.clienteEditando = id;
+  const form = $('#formCliente');
+  form.reset();
+  $('#tituloCliente').textContent = id ? 'Editar cliente' : 'Novo cliente';
+  if (id) {
+    const c = clientesCache.find((x) => x.id === id);
+    if (!c) return;
+    form.nome.value = c.nome;
+    form.telefone.value = c.telefone;
+    form.obs.value = c.obs;
+  }
+  modal('modalCliente', true);
+  form.nome.focus();
+}
+
+$('#btnNovoCliente').addEventListener('click', () => abrirModalCliente());
+$('#btnCancelarCliente').addEventListener('click', () => modal('modalCliente', false));
+
+$('#formCliente').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const corpo = { nome: form.nome.value, telefone: form.telefone.value, obs: form.obs.value };
+  try {
+    if (estado.clienteEditando) {
+      await api(`clientes/${estado.clienteEditando}`, { method: 'PUT', body: corpo });
+      toast('Cliente atualizado', 'ok');
+    } else {
+      await api('clientes', { method: 'POST', body: corpo });
+      toast('Cliente cadastrado', 'ok');
+    }
+    modal('modalCliente', false);
+    carregarClientes();
+  } catch (err) {
+    toast(err.message, 'erro');
+  }
+});
+
+function abrirReceber(id) {
+  const c = clientesCache.find((x) => x.id === id);
+  if (!c) return;
+  estado.clienteRecebendo = id;
+  $('#formReceber').reset();
+  $('#recInfo').innerHTML = `<strong>${escapar(c.nome)}</strong> deve <strong>${brl(c.saldo)}</strong>`;
+  $('#formReceber').valor.max = c.saldo;
+  modal('modalReceber', true);
+  $('#formReceber').valor.focus();
+}
+
+$('#btnCancelarReceber').addEventListener('click', () => modal('modalReceber', false));
+
+$('#formReceber').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const c = await api(`clientes/${estado.clienteRecebendo}/receber`, {
+      method: 'POST',
+      body: { valor: Number(e.target.valor.value), forma: e.target.forma.value },
+    });
+    modal('modalReceber', false);
+    toast(`Recebido! Saldo de ${c.nome}: ${brl(c.saldo)}`, 'ok');
+    carregarClientes();
+  } catch (err) {
+    toast(err.message, 'erro');
+  }
+});
+
+async function abrirExtrato(id) {
+  try {
+    const c = await api(`clientes/${id}`);
+    $('#tituloExtrato').textContent = `Extrato — ${c.nome}`;
+    $('#conteudoExtrato').innerHTML = `
+      <p style="margin-bottom:8px">Saldo atual: <strong>${brl(c.saldo)}</strong></p>
+      ${c.movimentos.length ? `<table class="trep" style="max-height:260px;overflow-y:auto;border:1px solid var(--borda)">
+        <thead><tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Motivo</th></tr></thead><tbody>
+        ${c.movimentos.map((m) => `
+          <tr><td>${new Date(m.data).toLocaleString('pt-BR')}</td>
+          <td class="${m.tipo === 'debito' ? 'estoque-baixo' : ''}">${m.tipo === 'debito' ? 'Fiado' : 'Recebido'}</td>
+          <td>${brl(m.valor)}</td><td style="font-size:.8rem">${escapar(m.motivo)}</td></tr>`).join('')}
+        </tbody></table>` : '<p style="color:#94a3b8">Sem movimentações</p>'}`;
+    modal('modalExtrato', true);
+  } catch (err) {
+    toast(err.message, 'erro');
+  }
+}
+
+$('#btnFecharExtrato').addEventListener('click', () => modal('modalExtrato', false));
 
 /* ---------- histórico ---------- */
 
@@ -591,6 +840,10 @@ async function atualizarRelatorio() {
   try {
     const r = await api(`relatorios?de=${$('#repDe').value}&ate=${$('#repAte').value}`);
     estado.relatorio = r;
+    let fiadoTotal = 0;
+    try {
+      fiadoTotal = (await api('clientes')).reduce((s, c) => s + c.saldo, 0);
+    } catch {}
     $('#repConteudo').innerHTML = `
       <div class="cards">
         <div class="card-resumo"><div class="rotulo">Faturamento</div><div class="valor">${brl(r.faturamento)}</div></div>
@@ -598,10 +851,16 @@ async function atualizarRelatorio() {
         <div class="card-resumo"><div class="rotulo">Ticket médio</div><div class="valor">${brl(r.ticketMedio)}</div></div>
         <div class="card-resumo"><div class="rotulo">Descontos</div><div class="valor">${brl(r.descontos)}</div></div>
         ${r.numCanceladas ? `<div class="card-resumo negativo"><div class="rotulo">Canceladas</div><div class="valor">${r.numCanceladas}</div></div>` : ''}
+        ${fiadoTotal > 0 ? `<div class="card-resumo negativo"><div class="rotulo">Fiado a receber</div><div class="valor">${brl(fiadoTotal)}</div></div>` : ''}
         ${Object.entries(r.porForma)
           .map(([forma, valor]) => `<div class="card-resumo"><div class="rotulo">${forma}</div><div class="valor">${brl(valor)}</div></div>`)
           .join('')}
       </div>
+      ${r.porDia.length > 1 ? `
+      <div class="rep-secao">
+        <h3>Faturamento por dia (gráfico)</h3>
+        ${graficoDias(r.porDia)}
+      </div>` : ''}
       <div class="rep-secao">
         <h3>Faturamento por dia</h3>
         <table class="trep"><thead><tr><th>Data</th><th>Vendas</th><th>Total</th></tr></thead><tbody>

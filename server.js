@@ -8,8 +8,13 @@ const { carregar, salvar, DB_FILE } = require('./db');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const VERSAO = '2.0.0';
+const VERSAO = '3.0.0';
 const SESSAO_MS = 12 * 60 * 60 * 1000;
+const LOGIN_MAX_TENTATIVAS = Number(process.env.PDV_LOGIN_MAX_TENTATIVAS) || 8;
+const LOGIN_JANELA_MS = Number(process.env.PDV_LOGIN_JANELA_MS) || 5 * 60 * 1000;
+const BACKUPS_DIR = path.join(__dirname, 'data', 'backups');
+const MAX_BACKUPS = 30;
+const tentativasLogin = new Map();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -144,6 +149,18 @@ function dinheiroEsperado() {
   return brl(espera);
 }
 
+function backupAuto(rotulo) {
+  try {
+    if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+    const nome = `caixa-${rotulo}-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+    fs.copyFileSync(DB_FILE, path.join(BACKUPS_DIR, nome));
+    const arquivos = fs.readdirSync(BACKUPS_DIR).sort();
+    while (arquivos.length > MAX_BACKUPS) {
+      fs.unlinkSync(path.join(BACKUPS_DIR, arquivos.shift()));
+    }
+  } catch {}
+}
+
 function fecharCaixa(operador, dinheiroContado) {
   const db = carregar();
   if (!db.caixa.aberto) throw new Error('Caixa já está fechado');
@@ -168,6 +185,7 @@ function fecharCaixa(operador, dinheiroContado) {
   db.fechamentos.push(registro);
   db.caixa = { aberto: false, fundo: 0, aberturaEm: null, abertoPor: null, movimentacoes: [] };
   salvar();
+  backupAuto(registro.id);
   return registro;
 }
 
@@ -200,6 +218,17 @@ function produtoJSON(p) {
     preco: p.preco,
     estoque: p.estoque,
     unidade: p.unidade || 'UN',
+  };
+}
+
+function clienteJSON(c) {
+  return {
+    id: c.id,
+    nome: c.nome,
+    telefone: c.telefone || '',
+    obs: c.obs || '',
+    saldo: brl(c.saldo),
+    criadoEm: c.criadoEm,
   };
 }
 
@@ -333,12 +362,24 @@ async function rotear(req, res, url) {
   }
 
   if (pathname === '/api/login' && method === 'POST') {
+    const ip = req.socket.remoteAddress || 'desconhecido';
+    const agora = Date.now();
+    const estadoIp = tentativasLogin.get(ip);
+    if (estadoIp && estadoIp.reset > agora && estadoIp.n >= LOGIN_MAX_TENTATIVAS) {
+      const segundos = Math.ceil((estadoIp.reset - agora) / 1000);
+      return json(res, 429, { erro: `Muitas tentativas. Tente de novo em ${segundos}s` });
+    }
     const corpo = await lerCorpo(req);
     const login = String(corpo.login || '').trim().toLowerCase();
     const usuario = db.usuarios.find((u) => u.login === login);
     if (!usuario || !usuario.ativo || hashSenha(corpo.senha || '', usuario.salt) !== usuario.hash) {
-      return json(res, 401, { erro: 'Login ou senha incorretos' });
+      const estado = estadoIp && estadoIp.reset > agora ? estadoIp : { n: 0, reset: agora + LOGIN_JANELA_MS };
+      estado.n += 1;
+      tentativasLogin.set(ip, estado);
+      const restam = Math.max(0, LOGIN_MAX_TENTATIVAS - estado.n);
+      return json(res, 401, { erro: restam > 0 ? `Login ou senha incorretos (${restam} tentativas restantes)` : 'Muitas tentativas. Aguarde antes de tentar novamente' });
     }
+    tentativasLogin.delete(ip);
     return json(res, 200, { token: abrirSessao(usuario), usuario: usuarioJSON(usuario) });
   }
 
@@ -457,6 +498,7 @@ async function rotear(req, res, url) {
     return json(res, 200, db.produtos.map(produtoJSON));
   }
 
+
   if (pathname === '/api/produtos' && method === 'POST') {
     if (!exigirAdmin({ usuario }, res)) return;
     const p = await lerCorpo(req);
@@ -513,12 +555,133 @@ async function rotear(req, res, url) {
     }
   }
 
+  if ((m = pathname.match(/^\/api\/produtos\/(\d+)\/entrada$/)) && method === 'POST') {
+    if (!exigirAdmin({ usuario }, res)) return;
+    const produto = db.produtos.find((x) => x.id === Number(m[1]));
+    if (!produto) return json(res, 404, { erro: 'Produto não encontrado' });
+    const corpo = await lerCorpo(req);
+    const qtd = Number(corpo.qtd);
+    if (!Number.isFinite(qtd) || qtd <= 0) return json(res, 400, { erro: 'Quantidade inválida' });
+    produto.estoque = brl(produto.estoque + qtd);
+    salvar();
+    return json(res, 200, produtoJSON(produto));
+  }
+
+  if (pathname === '/api/produtos/importar' && method === 'POST') {
+    if (!exigirAdmin({ usuario }, res)) return;
+    const corpo = await lerCorpo(req);
+    const linhas = String(corpo.csv || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (!linhas.length) return json(res, 400, { erro: 'CSV vazio' });
+    if (linhas[0].toLowerCase().includes('codigo')) linhas.shift();
+    if (linhas.length > 1000) return json(res, 400, { erro: 'Limite de 1000 linhas por importação' });
+    let criados = 0;
+    let atualizados = 0;
+    const erros = [];
+    linhas.forEach((linha, i) => {
+      const [codigo, nome, preco, estoque, unidade] = linha.split(/[;,\t]/).map((f) => (f || '').trim());
+      if (!codigo || !nome || !Number.isFinite(Number(preco))) {
+        erros.push({ linha: i + 1, motivo: 'código, nome e preço numérico são obrigatórios' });
+        return;
+      }
+      const dados = {
+        codigo,
+        nome,
+        preco: brl(preco),
+        estoque: Number.isFinite(Number(estoque)) ? Number(estoque) : 0,
+        unidade: (unidade || 'UN').toUpperCase(),
+      };
+      const existente = db.produtos.find((x) => x.codigo === codigo);
+      if (existente) {
+        Object.assign(existente, dados);
+        atualizados += 1;
+      } else {
+        db.produtos.push({ id: db.seqProduto++, ativo: true, ...dados });
+        criados += 1;
+      }
+    });
+    salvar();
+    return json(res, 200, { criados, atualizados, erros });
+  }
+
   if (pathname === '/api/produtos/busca' && method === 'GET') {
     const termo = (url.searchParams.get('q') || '').trim().toLowerCase();
     const resultados = db.produtos.filter(
       (p) => p.codigo.toLowerCase() === termo || p.nome.toLowerCase().includes(termo)
     );
     return json(res, 200, resultados.map(produtoJSON));
+  }
+
+  if (pathname === '/api/clientes' && method === 'GET') {
+    return json(res, 200, [...db.clientes]
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+      .map(clienteJSON));
+  }
+
+  if (pathname === '/api/clientes' && method === 'POST') {
+    const corpo = await lerCorpo(req);
+    if (!String(corpo.nome || '').trim()) return json(res, 400, { erro: 'Nome obrigatório' });
+    const cliente = {
+      id: db.seqCliente++,
+      nome: String(corpo.nome).trim(),
+      telefone: String(corpo.telefone || '').trim(),
+      obs: String(corpo.obs || '').trim(),
+      saldo: 0,
+      movimentos: [],
+      criadoEm: new Date().toISOString(),
+    };
+    db.clientes.push(cliente);
+    salvar();
+    return json(res, 201, clienteJSON(cliente));
+  }
+
+  if ((m = pathname.match(/^\/api\/clientes\/(\d+)$/))) {
+    const cliente = db.clientes.find((c) => c.id === Number(m[1]));
+    if (!cliente) return json(res, 404, { erro: 'Cliente não encontrado' });
+
+    if (method === 'GET') {
+      return json(res, 200, { ...clienteJSON(cliente), movimentos: cliente.movimentos.slice(-50).reverse() });
+    }
+
+    if (method === 'PUT') {
+      const corpo = await lerCorpo(req);
+      if (typeof corpo.nome === 'string' && corpo.nome.trim()) cliente.nome = corpo.nome.trim();
+      if (typeof corpo.telefone === 'string') cliente.telefone = corpo.telefone.trim();
+      if (typeof corpo.obs === 'string') cliente.obs = corpo.obs.trim();
+      salvar();
+      return json(res, 200, clienteJSON(cliente));
+    }
+
+    if (method === 'DELETE') {
+      if (!exigirAdmin({ usuario }, res)) return;
+      if (cliente.saldo > 0.005) return json(res, 400, { erro: 'Cliente tem fiado em aberto' });
+      db.clientes = db.clientes.filter((c) => c.id !== cliente.id);
+      salvar();
+      return json(res, 204, null);
+    }
+  }
+
+  if ((m = pathname.match(/^\/api\/clientes\/(\d+)\/receber$/)) && method === 'POST') {
+    const cliente = db.clientes.find((c) => c.id === Number(m[1]));
+    if (!cliente) return json(res, 404, { erro: 'Cliente não encontrado' });
+    const corpo = await lerCorpo(req);
+    const valor = brl(Number(corpo.valor));
+    if (!Number.isFinite(valor) || valor <= 0) return json(res, 400, { erro: 'Valor inválido' });
+    if (valor > brl(cliente.saldo) + 0.005) return json(res, 400, { erro: 'Valor maior que a dívida' });
+    const forma = String(corpo.forma || 'dinheiro');
+    cliente.saldo = brl(cliente.saldo - valor);
+    cliente.movimentos.push({ data: new Date().toISOString(), tipo: 'credito', valor, forma, motivo: String(corpo.motivo || 'Recebimento').trim() });
+    if (forma === 'dinheiro' && db.caixa.aberto) {
+      db.caixa.movimentacoes.push({
+        id: db.caixa.movimentacoes.length + 1,
+        tipo: 'suprimento',
+        valor,
+        motivo: `Recebimento fiado: ${cliente.nome}`,
+        usuario: usuario.nome,
+        data: new Date().toISOString(),
+      });
+    }
+    salvar();
+    return json(res, 200, clienteJSON(cliente));
   }
 
   if (pathname === '/api/vendas' && method === 'GET') {
@@ -567,11 +730,27 @@ async function rotear(req, res, url) {
       forma: String(p.forma || 'dinheiro'),
       valor: brl(p.valor),
     }));
+    const temFiado = pagamentos.some((p) => p.forma === 'fiado');
+    let clienteFiado = null;
+    if (temFiado) {
+      clienteFiado = db.clientes.find((c) => c.id === Number(corpo.clienteId));
+      if (!clienteFiado) return json(res, 400, { erro: 'Venda fiado exige cliente cadastrado' });
+    }
     const somaPago = brl(pagamentos.reduce((s, p) => s + p.valor, 0));
     if (somaPago < total) return json(res, 400, { erro: 'Valor pago menor que o total' });
     const troco = brl(somaPago - total);
+    const dinheiroPago = brl(pagamentos.filter((p) => p.forma === 'dinheiro').reduce((s, p) => s + p.valor, 0));
+    if (temFiado && troco > dinheiroPago + 0.005) {
+      return json(res, 400, { erro: 'Troco não pode ser financiado com fiado' });
+    }
 
     for (const { produto, qtd } of processados) produto.estoque = brl(produto.estoque - qtd);
+
+    if (clienteFiado) {
+      const valorFiado = brl(pagamentos.filter((p) => p.forma === 'fiado').reduce((s, p) => s + p.valor, 0));
+      clienteFiado.saldo = brl(clienteFiado.saldo + valorFiado);
+      clienteFiado.movimentos.push({ data: new Date().toISOString(), tipo: 'debito', valor: valorFiado, motivo: 'Venda fiado (será vinculada)' });
+    }
 
     const venda = {
       id: db.seqVenda++,
@@ -583,9 +762,15 @@ async function rotear(req, res, url) {
       pagamentos,
       troco,
       operador: usuario.nome,
-      cliente: String(corpo.cliente || '').trim(),
+      cliente: clienteFiado ? clienteFiado.nome : String(corpo.cliente || '').trim(),
+      clienteId: clienteFiado ? clienteFiado.id : null,
       obs: String(corpo.obs || '').trim(),
     };
+    if (clienteFiado) {
+      const mov = clienteFiado.movimentos[clienteFiado.movimentos.length - 1];
+      mov.motivo = `Venda #${venda.id}`;
+      mov.vendaId = venda.id;
+    }
     db.vendas.push(venda);
     salvar();
     return json(res, 201, vendaJSON(venda));
@@ -597,6 +782,14 @@ async function rotear(req, res, url) {
     if (!venda) return json(res, 404, { erro: 'Venda não encontrada' });
     if (venda.canceladaEm) return json(res, 400, { erro: 'Venda já cancelada' });
     const corpo = await lerCorpo(req);
+    const valorFiado = brl(venda.pagamentos.filter((p) => p.forma === 'fiado').reduce((s, p) => s + p.valor, 0));
+    if (valorFiado > 0 && venda.clienteId) {
+      const cliente = db.clientes.find((c) => c.id === venda.clienteId);
+      if (cliente) {
+        cliente.saldo = brl(cliente.saldo - valorFiado);
+        cliente.movimentos.push({ data: new Date().toISOString(), tipo: 'credito', valor: valorFiado, motivo: `Cancelamento da venda #${venda.id}` });
+      }
+    }
     for (const item of venda.itens) {
       const produto = db.produtos.find((p) => p.id === item.produtoId);
       if (produto) produto.estoque = brl(produto.estoque + item.qtd);
@@ -744,3 +937,12 @@ server.on('error', (err) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`PDV v${VERSAO} rodando em http://localhost:${PORT}`);
 });
+
+for (const sinal of ['SIGINT', 'SIGTERM']) {
+  process.on(sinal, () => {
+    console.log(`\nRecebido ${sinal}, encerrando...`);
+    try { salvar(); } catch {}
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1500).unref();
+  });
+}

@@ -1,4 +1,4 @@
-# PDV Express — Ponto de Venda v2
+# PDV Express — Ponto de Venda v3
 
 PDV web completo com **zero dependências externas**: exige apenas Node.js 18+.
 
@@ -18,8 +18,8 @@ Ao abrir o sistema pela primeira vez, a tela inicial pede a criação do **usuá
 
 | Cargo | Permissões |
 |---|---|
-| **Administrador** | Tudo: produtos, relatórios, operadores, cancelar vendas, configurações, backup |
-| **Operador** | Vender, abrir/fechar caixa, sangria e suprimento |
+| **Administrador** | Tudo: produtos, clientes, relatórios, operadores, cancelar vendas, configurações, backup |
+| **Operador** | Vender (incl. fiado), abrir/fechar caixa, sangria e suprimento, clientes |
 
 ## Funcionalidades
 
@@ -30,10 +30,13 @@ Ao abrir o sistema pela primeira vez, a tela inicial pede a criação do **usuá
   - Pagamento fracionado (dinheiro, débito, crédito, PIX) com cálculo de troco
   - Atalhos: **F1** foca a busca · **F2** finaliza · **F4** cancela a venda · **Esc** fecha modais
   - Baixa automática de estoque + cupom não fiscal para impressão
-- **Produtos**: cadastro/edição com código, nome, unidade, preço e estoque (alerta de estoque baixo)
-- **Cancelamento de venda** (admin): com motivo, **estorna o estoque** e sai do faturamento
-- **Caixa**: abertura com fundo de troco, **sangria e suprimento** com motivo, fechamento com **conferência** (dinheiro esperado × contado, diferença calculada e arquivada)
-- **Relatórios** (admin): por período, com faturamento, ticket médio, descontos, vendas canceladas, valores por forma de pagamento, faturamento por dia, **produtos mais vendidos** e últimos fechamentos — com **exportação CSV** (Excel pt-BR) e **impressão**
+- **Produtos**: cadastro/edição com código, nome, unidade, preço e estoque (alerta de estoque baixo), **entrada rápida de estoque** e **importação em massa por CSV** (atualiza existentes pelo código)
+- **Clientes e fiado**: cadastro, venda parcial ou total em fiado (exige cliente escolhido), saldo por cliente, **recebimento com extrato** (dinheiro recebido entra no caixa automaticamente), bloqueio de exclusão com dívida aberta
+- **Leitor de balança**: códigos EAN de peso (2 + 5 dígitos do produto + peso em gramas) adicionam a quantidade correta automaticamente
+- **Cancelamento de venda** (admin): com motivo, **estorna o estoque e o fiado** e sai do faturamento
+- **Caixa**: abertura com fundo de troco, **sangria e suprimento** com motivo, fechamento com **conferência** (dinheiro esperado × contado, diferença calculada e arquivada) + **backup automático do banco** a cada fechamento (média de 30 arquivos em `data/backups/`)
+- **Segurança de acesso**: limitador de tentativas no login (8 erros em 5 min bloqueiam temporariamente)
+- **Relatórios** (admin): por período, com faturamento, ticket médio, descontos, fiado a receber, vendas canceladas, valores por forma de pagamento, faturamento por dia com **gráfico de barras**, **produtos mais vendidos** e últimos fechamentos — com **exportação CSV** (Excel pt-BR) e **impressão**
 - **Histórico**: últimas 200 vendas com reimpressão de cupom e cancelamento (admin)
 - **Operadores** (admin): criar, editar, trocar senha, desativar e excluir usuários; sessões invalidadas ao desativar ou trocar senha
 - **Ajustes** (admin): dados da loja no cupom (nome, CNPJ, endereço, telefone), mensagem personalizada e **backup do banco em JSON**
@@ -53,7 +56,7 @@ rm -rf data
 pdv/
 ├── server.js        # API REST + servidor estático (http puro)
 ├── db.js            # persistência JSON
-├── teste.js         # 53 testes end-to-end
+├── teste.js         # 73 testes end-to-end
 ├── data/db.json     # base de dados (gerado em runtime)
 └── public/
     ├── index.html   # interface (7 abas)
@@ -83,6 +86,11 @@ pdv/
 | GET | `/api/relatorios/csv?de=&ate=` | admin | CSV das vendas |
 | GET | `/api/operadores` · POST/PUT/DELETE | admin | gestão de usuários |
 | GET | `/api/backup` | admin | download do banco |
+| GET/POST | `/api/clientes` | logado | cadastro de clientes |
+| GET/PUT/DELETE | `/api/clientes/:id` | logado / DELETE admin | cliente + extrato |
+| POST | `/api/clientes/:id/receber` | logado | recebimento de fiado |
+| POST | `/api/produtos/:id/entrada` | admin | entrada de estoque |
+| POST | `/api/produtos/importar` | admin | importação em massa (CSV) |
 
 ## Nota sobre emissão fiscal
 

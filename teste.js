@@ -41,7 +41,7 @@ const assert = (cond, msg) => {
 };
 
 (async () => {
-  const servidor = spawn(process.execPath, ['server.js'], { cwd: __dirname, env: { ...process.env, PORT: '3123' }, stdio: 'ignore' });
+  const servidor = spawn(process.execPath, ['server.js'], { cwd: __dirname, env: { ...process.env, PORT: '3123', PDV_LOGIN_MAX_TENTATIVAS: '5', PDV_LOGIN_JANELA_MS: '1000' }, stdio: 'ignore' });
   await new Promise((r) => setTimeout(r, 600));
   const matarServidor = () => { try { servidor.kill('SIGKILL'); } catch {} };
   process.on('exit', matarServidor);
@@ -182,6 +182,85 @@ const assert = (cond, msg) => {
   assert(r.status === 200 && typeof r.body === 'object' && (r.body.produtos || r.body.usuarios), 'backup baixado');
   r = await req('GET', 'backup', null);
   assert(r.status === 401, 'backup exige autenticação');
+
+  /* ============ v3: clientes, fiado, balança, importação, rate limit ============ */
+  r = await req('POST', 'operadores', { nome: 'Bruno', login: 'bruno', senha: '1234', role: 'operador' }, tokenAdmin);
+  assert(r.status === 201, 'criar segundo operador');
+  r = await req('POST', 'login', { login: 'bruno', senha: '1234' });
+  assert(r.status === 200, 'login segundo operador');
+  const tokenBruno = r.body.token;
+
+
+  r = await req('POST', 'clientes', { nome: 'joao pereira', telefone: '(11) 98888-1111' }, tokenBruno);
+  assert(r.status === 201 && r.body.nome === 'joao pereira', 'cadastrar cliente');
+  const idJoao = r.body.id;
+  r = await req('POST', 'clientes', { nome: 'Ana', telefone: '1197777' }, tokenBruno);
+  const idAna = r.body.id;
+
+  r = await req('POST', 'caixa/abrir', { fundo: 50 }, tokenBruno);
+  assert(r.status === 200, 'caixa reaberto');
+
+  r = await req('POST', 'vendas', { itens: [ { produtoId: 1, qtd: 3, precoUnit: 24.9 } ], pagamentos: [ { forma: 'fiado', valor: 42.4 } ] }, tokenBruno);
+  assert(r.status === 400 && r.body.erro.includes('exige cliente'), 'fiado sem cliente rejeitado');
+
+  r = await req('POST', 'vendas', { itens: [ { produtoId: 1, qtd: 3, precoUnit: 24.9 } ], pagamentos: [ { forma: 'fiado', valor: 42.4 }, { forma: 'dinheiro', valor: 32.3 } ], clienteId: idJoao }, tokenBruno);
+  assert(r.status === 201 && r.body.cliente === 'joao pereira', 'venda fiado registrada');
+  const vendaFiado = r.body.id;
+
+  r = await req('GET', `clientes/${idJoao}`, null, tokenBruno);
+  assert(r.body.saldo === 42.4 && r.body.movimentos.length === 1, `saldo fiado atualizado (${r.body.saldo})`);
+
+  r = await req('POST', 'vendas', { itens: [ { produtoId: 2, qtd: 2, precoUnit: 18.5 } ], pagamentos: [ { forma: 'fiado', valor: 20 }, { forma: 'dinheiro', valor: 17 } ], clienteId: idAna }, tokenBruno);
+  assert(r.status === 201 && r.body.troco === 0, 'venda mista fiado+dinheiro (custo exato, sem troco)');
+
+  r = await req('POST', 'vendas', { itens: [ { produtoId: 1, qtd: 1, precoUnit: 24.9 } ], pagamentos: [ { forma: 'fiado', valor: 50 }, { forma: 'dinheiro', valor: 50 } ], clienteId: idAna }, tokenBruno);
+  assert(r.status === 400 && r.body.erro.includes('Troco não pode ser financiado'), 'fiado financiando troco rejeitado');
+
+  r = await req('POST', `clientes/${idJoao}/receber`, { valor: 12.4, forma: 'dinheiro' }, tokenAdmin);
+  assert(r.status === 200 && r.body.saldo === 30, `recebimento parcial (${r.body.saldo})`);
+
+  r = await req('GET', 'resumo', null, tokenBruno);
+  const supMov = r.body.movimentacoes.find((mv) => mv.motivo && mv.motivo.includes('Recebimento fiado'));
+  assert(supMov && supMov.valor === 12.4, 'recebimento em dinheiro virou suprimento no caixa');
+
+  r = await req('POST', `clientes/${idAna}/receber`, { valor: 9999, forma: 'pix' }, tokenBruno);
+  assert(r.status === 400, 'receber mais que a dívida rejeitado');
+
+  r = await req('DELETE', `clientes/${idJoao}`, null, tokenAdmin);
+  assert(r.status === 400, 'excluir cliente com fiado aberto rejeitado');
+
+  r = await req('POST', `vendas/${vendaFiado}/cancelar`, { motivo: 'teste fiado' }, tokenAdmin);
+  assert(r.status === 200, 'venda fiado cancelada');
+  r = await req('GET', `clientes/${idJoao}`, null, tokenAdmin);
+  assert(r.body.saldo === -12.4 || r.body.saldo === 0, `cancelamento de fiado ajusta saldo (${r.body.saldo})`);
+
+  r = await req('POST', 'produtos/2/entrada', { qtd: 10 }, tokenBruno);
+  assert(r.status === 403, 'operador não dá entrada de estoque');
+  r = await req('POST', 'produtos/2/entrada', { qtd: 10 }, tokenAdmin);
+  assert(r.status === 200 && r.body.estoque === 28, `entrada de estoque (${r.body.estoque})`);
+  r = await req('POST', 'produtos/2/entrada', { qtd: -5 }, tokenAdmin);
+  assert(r.status === 400, 'entrada negativa rejeitada');
+
+  r = await req('POST', 'produtos/importar', { csv: 'codigo;nome;preco;estoque\n7890001;Arroz Tipo A;25.50;100;PCT\n7890099;Óleo de Soja;5.75;48\nlinha-ruim;Sem Preço;abc' }, tokenAdmin);
+  assert(r.body.criados === 1 && r.body.atualizados === 1 && r.body.erros.length === 1, `importação CSV (${JSON.stringify(r.body)})`);
+  r = await req('GET', 'produtos', null, tokenAdmin);
+  const atualizado = r.body.find((p) => p.codigo === '7890001');
+  const novoImport = r.body.find((p) => p.codigo === '7890099');
+  assert(atualizado.nome === 'Arroz Tipo A' && atualizado.preco === 25.5 && atualizado.estoque === 100, 'upsert de produto existente');
+  assert(novoImport && novoImport.unidade === 'UN', 'produto novo importado com defautls');
+
+  for (let i = 0; i < 10; i++) {
+    await req('POST', 'login', { login: 'admin', senha: 'errada' });
+  }
+  r = await req('POST', 'login', { login: 'admin', senha: '1234' });
+  assert(r.status === 429, `rate limit bloqueou após várias tentativas (${r.status})`);
+  await new Promise((r2) => setTimeout(r2, 1100));
+  r = await req('POST', 'login', { login: 'admin', senha: '1234' });
+  assert(r.status === 200, 'rate limit expirou e login voltou a funcionar');
+
+  r = await req('POST', 'caixa/fechar', { dinheiroContado: 79.4 }, tokenBruno);
+  if (r.status !== 200) console.log('INFO fechamento:', JSON.stringify(r.body));
+  assert(r.status === 200 && r.body.dinheiroEsperado === 79.4 && r.body.diferenca === 0, `fechamento final com caixa batido (esperado ${r.body ? r.body.dinheiroEsperado : '?'})`);
 
   r = await req('GET', 'saude');
   assert(r.status === 200 && r.body.precisaSetup === false, 'saúde após setup');
