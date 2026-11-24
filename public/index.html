@@ -4,95 +4,219 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDV — Ponto de Venda</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛒</text></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <div class="logo">🛒 PDV Express</div>
-    <nav>
-      <button class="aba ativa" data-aba="venda">Venda</button>
-      <button class="aba" data-aba="produtos">Produtos</button>
-      <button class="aba" data-aba="historico">Histórico</button>
-      <button class="aba" data-aba="resumo">Resumo</button>
-    </nav>
-    <div id="statusCaixa" class="status-caixa fechado">Caixa fechado</div>
-  </header>
+  <!-- ===== LOGIN / PRIMEIRO ACESSO ===== -->
+  <div id="telaLogin" class="login hidden">
+    <div class="login-caixa">
+      <h1>🛒 PDV Express</h1>
+      <div id="formLogin">
+        <label>Usuário <input id="inputLogin" autocomplete="username"></label>
+        <label>Senha <input id="inputSenha" type="password" autocomplete="current-password"></label>
+        <button id="btnLogin" class="btn primario grande">Entrar</button>
+      </div>
+      <div id="formSetup" class="hidden">
+        <p class="setup-aviso">Primeiro acesso: crie o usuário administrador.</p>
+        <label>Seu nome <input id="setupNome" autocomplete="off"></label>
+        <label>Login <input id="setupLogin" autocomplete="off"></label>
+        <label>Senha (mín. 4) <input id="setupSenha" type="password" autocomplete="new-password"></label>
+        <button id="btnSetup" class="btn primario grande">Criar administrador e entrar</button>
+      </div>
+      <p id="erroLogin" class="erro-msg hidden"></p>
+    </div>
+  </div>
 
-  <main>
-    <!-- ===== VENDA ===== -->
-    <section id="aba-venda" class="painel ativo">
-      <div class="venda-grid">
-        <div class="col-esq">
-          <div class="busca">
-            <input id="inputBusca" type="text" autocomplete="off"
-                   placeholder="Código ou nome do produto + Enter">
-            <div id="sugestoes" class="sugestoes hidden"></div>
-          </div>
-          <div class="catalogo" id="catalogo"></div>
-        </div>
+  <!-- ===== APP ===== -->
+  <div id="app" class="hidden">
+    <header>
+      <div class="logo">🛒 PDV Express</div>
+      <nav id="navAbas">
+        <button class="aba ativa" data-aba="venda">Venda</button>
+        <button class="aba" data-aba="produtos">Produtos</button>
+        <button class="aba" data-aba="clientes">Clientes</button>
+        <button class="aba" data-aba="os">Ordens</button>
+        <button class="aba" data-aba="historico">Histórico</button>
+        <button class="aba" data-aba="relatorios">Relatórios</button>
+        <button class="aba" data-aba="operadores">Operadores</button>
+        <button class="aba" data-aba="resumo">Caixa</button>
+        <button class="aba" data-aba="ajustes">Ajustes</button>
+      </nav>
+      <button id="btnTema" class="theme-btn" title="Alternar tema claro/escuro">🌙</button>
+      <div id="statusCaixa" class="status-caixa fechado">Caixa fechado</div>
+      <div class="usuario-area">
+        <span id="lblUsuario"></span>
+        <button id="btnSair" class="btn-link">Sair</button>
+      </div>
+    </header>
 
-        <div class="col-dir">
-          <table class="tabela" id="tabelaCarrinho">
-            <thead>
-              <tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Total</th><th></th></tr>
-            </thead>
-            <tbody id="corCarrinho"></tbody>
-          </table>
-          <div class="totais">
-            <div class="linha">
-              <label>Desconto (R$)</label>
-              <input id="inputDesconto" type="number" min="0" step="0.01" value="0">
+    <main>
+      <!-- ===== VENDA ===== -->
+      <section id="aba-venda" class="painel ativo">
+        <div class="venda-grid">
+          <div class="col-esq">
+            <div class="busca">
+              <input id="inputBusca" type="text" autocomplete="off"
+                     placeholder="Código ou nome do produto + Enter (F1 foca aqui)">
+              <div id="sugestoes" class="sugestoes hidden"></div>
             </div>
-            <div class="linha subtotal"><span>Subtotal</span><span id="lblSubtotal">R$ 0,00</span></div>
-            <div class="linha total"><span>TOTAL</span><span id="lblTotal">R$ 0,00</span></div>
-            <button id="btnPagar" class="btn primario grande" disabled>Finalizar (F2)</button>
-            <button id="btnCancelar" class="btn secundario">Cancelar venda</button>
+            <div class="catalogo" id="catalogo"></div>
+          </div>
+
+          <div class="col-dir">
+            <table class="tabela" id="tabelaCarrinho">
+              <thead>
+                <tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Total</th><th></th></tr>
+              </thead>
+              <tbody id="corCarrinho"></tbody>
+            </table>
+            <div class="totais">
+              <div class="linha">
+                <label>Desconto (R$)</label>
+                <input id="inputDesconto" type="number" min="0" step="0.01" value="0">
+              </div>
+              <div class="linha">
+                <label>Cliente (fiado)</label>
+                <select id="selCliente" style="flex:1;padding:8px;border:1px solid var(--borda);border-radius:6px;max-width:220px"><option value="">— sem cliente —</option></select>
+              </div>
+              <div class="linha subtotal"><span>Subtotal</span><span id="lblSubtotal">R$ 0,00</span></div>
+              <div class="linha total"><span>TOTAL</span><span id="lblTotal">R$ 0,00</span></div>
+              <button id="btnPagar" class="btn primario grande" disabled>Finalizar (F2)</button>
+              <button id="btnCancelar" class="btn secundario">Cancelar venda (F4)</button>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- ===== PRODUTOS ===== -->
-    <section id="aba-produtos" class="painel">
-      <div class="barra">
-        <input id="filtroProdutos" type="text" placeholder="Filtrar por código ou nome...">
-        <button id="btnNovoProduto" class="btn primario">+ Novo produto</button>
-      </div>
-      <table class="tabela">
-        <thead>
-          <tr><th>Código</th><th>Nome</th><th>Un.</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr>
-        </thead>
-        <tbody id="corProdutos"></tbody>
-      </table>
-    </section>
-
-    <!-- ===== HISTÓRICO ===== -->
-    <section id="aba-historico" class="painel">
-      <table class="tabela">
-        <thead>
-          <tr><th>#</th><th>Data</th><th>Itens</th><th>Total</th><th>Pagamento</th><th></th></tr>
-        </thead>
-        <tbody id="corHistorico"></tbody>
-      </table>
-    </section>
-
-    <!-- ===== RESUMO ===== -->
-    <section id="aba-resumo" class="painel">
-      <div class="cards" id="cardsResumo"></div>
-      <div class="caixa-acoes">
-        <div class="caixa-form" id="formAbrir">
-          <h3>Abrir caixa</h3>
-          <input id="inputFundo" type="number" min="0" step="0.01" placeholder="Fundo de troco (R$)">
-          <button id="btnAbrirCaixa" class="btn primario">Abrir</button>
+      <!-- ===== PRODUTOS ===== -->
+      <section id="aba-produtos" class="painel">
+        <div class="barra">
+          <input id="filtroProdutos" type="text" placeholder="Filtrar por código ou nome...">
+          <button id="btnImportar" class="btn secundario">⤓ Importar CSV</button>
+          <button id="btnNovoProduto" class="btn primario">+ Novo produto</button>
         </div>
-        <div class="caixa-form hidden" id="formFechar">
-          <h3>Caixa aberto</h3>
-          <p id="infoCaixa"></p>
-          <button id="btnFecharCaixa" class="btn perigo">Fechar caixa (sangria)</button>
+        <table class="tabela">
+          <thead>
+            <tr><th>Código</th><th>Nome</th><th>Un.</th><th>Preço</th><th>Custo</th><th>Estoque</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="corProdutos"></tbody>
+        </table>
+      </section>
+
+      <!-- ===== CLIENTES ===== -->
+      <section id="aba-clientes" class="painel">
+        <div class="barra">
+          <input id="filtroClientes" type="text" placeholder="Filtrar por nome ou telefone...">
+          <button id="btnNovoCliente" class="btn primario">+ Novo cliente</button>
         </div>
-      </div>
-    </section>
-  </main>
+        <table class="tabela">
+          <thead><tr><th>Nome</th><th>Telefone</th><th>Saldo fiado</th><th>Ações</th></tr></thead>
+          <tbody id="corClientes"></tbody>
+        </table>
+      </section>
+
+      <!-- ===== ORDENS DE SERVIÇO ===== -->
+      <section id="aba-os" class="painel">
+        <div class="barra">
+          <input id="filtroOS" type="text" placeholder="Filtrar por cliente ou aparelho...">
+          <button id="btnNovaOS" class="btn primario">+ Nova ordem</button>
+        </div>
+        <table class="tabela">
+          <thead><tr><th>#</th><th>Cliente</th><th>Aparelho</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead>
+          <tbody id="corOS"></tbody>
+        </table>
+      </section>
+
+      <!-- ===== HISTÓRICO ===== -->
+      <section id="aba-historico" class="painel">
+        <table class="tabela">
+          <thead>
+            <tr><th>#</th><th>Data</th><th>Itens</th><th>Total</th><th>Pagamento</th><th>Operador</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="corHistorico"></tbody>
+        </table>
+      </section>
+
+      <!-- ===== RELATÓRIOS ===== -->
+      <section id="aba-relatorios" class="painel">
+        <div class="barra">
+          <label class="campo-data">De <input id="repDe" type="date"></label>
+          <label class="campo-data">Até <input id="repAte" type="date"></label>
+          <button id="btnRepAtualizar" class="btn primario">Atualizar</button>
+          <button id="btnRepCSV" class="btn secundario">⬇ CSV</button>
+          <button id="btnRepImprimir" class="btn secundario">🖨 Imprimir</button>
+        </div>
+        <div id="repConteudo"></div>
+      </section>
+
+      <!-- ===== OPERADORES ===== -->
+      <section id="aba-operadores" class="painel">
+        <div class="barra">
+          <button id="btnNovoOperador" class="btn primario">+ Novo operador</button>
+        </div>
+        <table class="tabela">
+          <thead>
+            <tr><th>Nome</th><th>Login</th><th>Cargo</th><th>Status</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="corOperadores"></tbody>
+        </table>
+      </section>
+
+      <!-- ===== CAIXA ===== -->
+      <section id="aba-resumo" class="painel scrollavel">
+        <div class="cards" id="cardsResumo"></div>
+        <div id="caixasAbertos"></div>
+        <div class="caixa-acoes">
+          <div class="caixa-form" id="formAbrir">
+            <h3>Abrir caixa</h3>
+            <input id="inputFundo" type="number" min="0" step="0.01" placeholder="Fundo de troco (R$)">
+            <button id="btnAbrirCaixa" class="btn primario">Abrir</button>
+          </div>
+          <div class="caixa-form hidden" id="formFechar">
+            <h3>Caixa aberto</h3>
+            <p id="infoCaixa"></p>
+            <button id="btnSangria" class="btn secundario">Sangria / Suprimento</button>
+            <button id="btnFecharCaixa" class="btn perigo">Fechar caixa</button>
+          </div>
+          <div class="caixa-form">
+            <h3>Movimentações do dia</h3>
+            <div id="listaMovimentacoes" class="lista-mov"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== AJUSTES ===== -->
+      <section id="aba-ajustes" class="painel scrollavel">
+        <div class="ajustes-grid">
+          <div class="caixa-form">
+            <h3>Loja (cupom)</h3>
+            <label class="lbl-interna">Logo do cupom <input id="cfgLogo" type="file" accept="image/*"></label>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <img id="cfgLogoPreview" class="hidden" style="max-height:56px;border-radius:4px">
+              <button id="btnRemoverLogo" class="btn secundario mini">Remover logo</button>
+            </div>
+            <label class="lbl-interna">Nome <input id="cfgNome"></label>
+            <label class="lbl-interna">CNPJ <input id="cfgCnpj"></label>
+            <label class="lbl-interna">Endereço <input id="cfgEndereco"></label>
+            <label class="lbl-interna">Telefone <input id="cfgTelefone"></label>
+            <h3>Mensagem do cupom</h3>
+            <textarea id="cfgMensagem" rows="3"></textarea>
+            <button id="btnSalvarConfig" class="btn primario">Salvar</button>
+          </div>
+          <div class="caixa-form">
+            <h3>Auditoria</h3>
+            <div id="listaAuditoria" class="lista-mov" style="max-height:420px;overflow:auto"></div>
+          </div>
+          <div class="caixa-form">
+            <h3>Manutenção</h3>
+            <p id="infoVersao"></p>
+            <button id="btnBackup" class="btn secundario">⬇ Baixar backup do banco</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <!-- ===== MODAL PAGAMENTO ===== -->
   <div id="modalPagamento" class="modal hidden">
@@ -105,6 +229,7 @@
           <option value="debito">Cartão débito</option>
           <option value="credito">Cartão crédito</option>
           <option value="pix">PIX</option>
+          <option value="fiado">Fiado (a receber)</option>
         </select>
         <input id="inputValorPago" type="number" min="0" step="0.01" placeholder="Valor (R$)">
         <button id="btnAddPagamento" class="btn secundario">Adicionar</button>
@@ -143,10 +268,198 @@
     </div>
   </div>
 
-  <!-- ===== CUPOM (impressão) ===== -->
+  <!-- ===== MODAL OPERADOR ===== -->
+  <div id="modalOperador" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloOperador">Novo operador</h2>
+      <form id="formOperador">
+        <label>Nome <input name="nome" required></label>
+        <label>Login <input name="login" required autocomplete="off"></label>
+        <label id="lblSenhaObr">Senha (mín. 4) <input name="senha" type="password" autocomplete="new-password"></label>
+        <label>Cargo
+          <select name="role">
+            <option value="operador">Operador (vende e opera caixa)</option>
+            <option value="admin">Administrador (acesso total)</option>
+          </select>
+        </label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Salvar</button>
+          <button type="button" id="btnCancelarOperador" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL MOVIMENTAÇÃO ===== -->
+  <div id="modalMov" class="modal hidden">
+    <div class="modal-caixa">
+      <h2>Sangria / Suprimento</h2>
+      <form id="formMov">
+        <label>Tipo
+          <select name="tipo">
+            <option value="sangria">Sangria (retirar dinheiro)</option>
+            <option value="suprimento">Suprimento (colocar dinheiro)</option>
+          </select>
+        </label>
+        <label>Valor (R$) <input name="valor" type="number" min="0.01" step="0.01" required></label>
+        <label>Motivo <input name="motivo" placeholder="Ex.: depósito no banco"></label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Registrar</button>
+          <button type="button" id="btnCancelarMov" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL CLIENTE ===== -->
+  <div id="modalCliente" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloCliente">Novo cliente</h2>
+      <form id="formCliente">
+        <label>Nome <input name="nome" required></label>
+        <label>Telefone <input name="telefone" placeholder="(11) 99999-0000"></label>
+        <label>Observações <input name="obs" placeholder="Ex.: cliente da padaria"></label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Salvar</button>
+          <button type="button" id="btnCancelarCliente" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL RECEBER FIADO ===== -->
+  <div id="modalReceber" class="modal hidden">
+    <div class="modal-caixa">
+      <h2>Receber fiado</h2>
+      <p id="recInfo"></p>
+      <form id="formReceber">
+        <label>Valor (R$) <input name="valor" type="number" min="0.01" step="0.01" required></label>
+        <label>Forma
+          <select name="forma">
+            <option value="dinheiro">Dinheiro (entra no caixa)</option>
+            <option value="pix">PIX</option>
+            <option value="debito">Cartão débito</option>
+          </select>
+        </label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Registrar recebimento</button>
+          <button type="button" id="btnCancelarReceber" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL EXTRATO FIADO ===== -->
+  <div id="modalExtrato" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloExtrato">Extrato</h2>
+      <div id="conteudoExtrato"></div>
+      <div class="modal-acoes"><button type="button" id="btnFecharExtrato" class="btn secundario">Fechar</button></div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL ENTRADA ESTOQUE ===== -->
+  <div id="modalEntrada" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloEntrada">Entrada de estoque</h2>
+      <form id="formEntrada">
+        <label>Quantidade recebida <input name="qtd" type="number" min="0.001" step="0.001" required></label>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Adicionar</button>
+          <button type="button" id="btnCancelarEntrada" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL ORDEM DE SERVIÇO ===== -->
+  <div id="modalOS" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloOS">Nova ordem de serviço</h2>
+      <form id="formOS">
+        <label>Cliente <input name="cliente" required></label>
+        <label>Aparelho / item <input name="aparelho" required placeholder="Ex.: Liquidificador, notebook..."></label>
+        <label>Descrição do serviço <input name="descricao" placeholder="Ex.: trocar a ladra"></label>
+        <div class="linha-dupla">
+          <label>Valor orçado (R$) <input name="valor" type="number" min="0" step="0.01" value="0"></label>
+          <label>Status
+            <select name="status">
+              <option value="aberta">Aberta</option>
+              <option value="em_andamento">Em andamento</option>
+              <option value="pronta">Pronta</option>
+              <option value="entregue">Entregue</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
+          </label>
+        </div>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Salvar</button>
+          <button type="button" id="btnCancelarOS" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL TECLADO NUMÉRICO ===== -->
+  <div id="modalNumpad" class="modal hidden">
+    <div class="modal-caixa" style="width:min(320px,92vw)">
+      <h2 id="tituloNumpad" style="font-size:1rem">Quantidade</h2>
+      <div id="displayNumpad" class="numpad-display">0</div>
+      <div class="numpad">
+        <button type="button" data-tecla="1">1</button>
+        <button type="button" data-tecla="2">2</button>
+        <button type="button" data-tecla="3">3</button>
+        <button type="button" data-tecla="4">4</button>
+        <button type="button" data-tecla="5">5</button>
+        <button type="button" data-tecla="6">6</button>
+        <button type="button" data-tecla="7">7</button>
+        <button type="button" data-tecla="8">8</button>
+        <button type="button" data-tecla="9">9</button>
+        <button type="button" data-tecla=".">,</button>
+        <button type="button" data-tecla="0">0</button>
+        <button type="button" data-tecla="apagar">⌫</button>
+      </div>
+      <div class="modal-acoes">
+        <button id="btnNumpadOk" class="btn primario">OK</button>
+        <button id="btnNumpadCancelar" class="btn secundario">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL IMPORTAR CSV ===== -->
+  <div id="modalImportar" class="modal hidden">
+    <div class="modal-caixa">
+      <h2>Importar produtos (CSV)</h2>
+      <p style="font-size:.85rem;color:#64748b;margin-bottom:8px">Uma linha por produto: <code>codigo;nome;preco;estoque;unidade;custo</code>. Produtos com código existente são atualizados.</p>
+      <textarea id="csvTexto" rows="8" style="width:100%;font-family:monospace;font-size:.85rem;padding:8px;border:1px solid var(--borda);border-radius:6px" placeholder="7890001;Arroz 5kg;24.90;50;PCT&#10;7890002;Café 500g;18.50;30;PCT"></textarea>
+      <div style="margin-top:10px" class="modal-acoes">
+        <button id="btnConfirmarImportar" class="btn primario">Importar</button>
+        <button id="btnCancelarImportar" class="btn secundario">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL FECHAR CAIXA ===== -->
+  <div id="modalFecharCaixa" class="modal hidden">
+    <div class="modal-caixa">
+      <h2>Fechar caixa</h2>
+      <p id="fcEsperado"></p>
+      <form id="formFecharCaixa">
+        <label>Dinheiro contado (R$) <input id="fcContado" type="number" min="0" step="0.01"></label>
+        <p id="fcDiferenca" class="fc-diferenca"></p>
+        <div class="modal-acoes">
+          <button type="submit" class="btn perigo">Confirmar fechamento</button>
+          <button type="button" id="btnCancelarFechar" class="btn secundario">Voltar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== CUPOM / RELATÓRIO (impressão) ===== -->
   <div id="cupom" class="cupom">
     <div class="cupom-conteudo"></div>
   </div>
+  <div id="relImpressao" class="relatorio-print"></div>
 
   <div id="toast" class="toast hidden"></div>
   <script src="app.js"></script>
