@@ -324,6 +324,38 @@ const assert = (cond, msg) => {
   r = await req('GET', 'resumo', null, tokenAdmin);
   assert((r.body.caixasAbertos || []).length === 0, 'nenhum caixa aberto após fechamentos');
 
+  /* ============ v4.1: ordens de serviço, logo do cupom ============ */
+  r = await req('POST', 'os', { cliente: 'Dona Maria', aparelho: 'Liquidificador', valor: 42.5 }, tokenBruno);
+  assert(r.status === 201 && r.body.status === 'aberta' && r.body.valor === 42.5, 'ordem de serviço criada');
+  const idOS = r.body.id;
+
+  r = await req('POST', 'os', { cliente: '', aparelho: 'x' }, tokenBruno);
+  assert(r.status === 400, 'ordem sem cliente rejeitada');
+
+  r = await req('PUT', `os/${idOS}`, { status: 'pronta', valor: 45 }, tokenAdmin);
+  assert(r.status === 200 && r.body.status === 'pronta' && r.body.valor === 45, 'status e valor da ordem atualizados');
+
+  r = await req('PUT', `os/${idOS}`, { status: 'voando' }, tokenAdmin);
+  assert(r.status === 400, 'status inválido rejeitado');
+
+  r = await req('GET', 'os?status=pronta', null, tokenBruno);
+  assert(r.status === 200 && r.body.length === 1 && r.body[0].id === idOS, 'filtro de ordens por status funciona');
+
+  r = await req('DELETE', `os/${idOS}`, null, tokenBruno);
+  assert(r.status === 403, 'operador não exclui ordem');
+  r = await req('DELETE', `os/${idOS}`, null, tokenAdmin);
+  assert(r.status === 204, 'admin exclui ordem');
+
+  r = await req('PUT', 'configuracao', { loja: { logo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==' } }, tokenAdmin);
+  assert(r.status === 200 && String(r.body.configuracao.loja.logo || '').startsWith('data:image/png'), 'logo do cupom salva');
+
+  r = await req('PUT', 'configuracao', { loja: { logo: 'javascript:alert(1)' } }, tokenAdmin);
+  assert(r.status === 400, 'logo inválida rejeitada');
+
+  r = await req('GET', 'configuracao', null, tokenBruno);
+  assert(r.status === 200 && String(r.body.configuracao.loja.logo || '').startsWith('data:'), 'logo vai para o cupom do operador');
+  assert(r.body.versao === '4.1.0', `versão 4.1.0 (${r.body.versao})`);
+
   r = await req('GET', 'saude');
   assert(r.status === 200 && r.body.precisaSetup === false, 'saúde após setup');
 

@@ -36,6 +36,7 @@
         <button class="aba ativa" data-aba="venda">Venda</button>
         <button class="aba" data-aba="produtos">Produtos</button>
         <button class="aba" data-aba="clientes">Clientes</button>
+        <button class="aba" data-aba="os">Ordens</button>
         <button class="aba" data-aba="historico">Histórico</button>
         <button class="aba" data-aba="relatorios">Relatórios</button>
         <button class="aba" data-aba="operadores">Operadores</button>
@@ -115,6 +116,18 @@
         </table>
       </section>
 
+      <!-- ===== ORDENS DE SERVIÇO ===== -->
+      <section id="aba-os" class="painel">
+        <div class="barra">
+          <input id="filtroOS" type="text" placeholder="Filtrar por cliente ou aparelho...">
+          <button id="btnNovaOS" class="btn primario">+ Nova ordem</button>
+        </div>
+        <table class="tabela">
+          <thead><tr><th>#</th><th>Cliente</th><th>Aparelho</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead>
+          <tbody id="corOS"></tbody>
+        </table>
+      </section>
+
       <!-- ===== HISTÓRICO ===== -->
       <section id="aba-historico" class="painel">
         <table class="tabela">
@@ -178,6 +191,11 @@
         <div class="ajustes-grid">
           <div class="caixa-form">
             <h3>Loja (cupom)</h3>
+            <label class="lbl-interna">Logo do cupom <input id="cfgLogo" type="file" accept="image/*"></label>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <img id="cfgLogoPreview" class="hidden" style="max-height:56px;border-radius:4px">
+              <button id="btnRemoverLogo" class="btn secundario mini">Remover logo</button>
+            </div>
             <label class="lbl-interna">Nome <input id="cfgNome"></label>
             <label class="lbl-interna">CNPJ <input id="cfgCnpj"></label>
             <label class="lbl-interna">Endereço <input id="cfgEndereco"></label>
@@ -351,6 +369,60 @@
           <button type="button" id="btnCancelarEntrada" class="btn secundario">Cancelar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL ORDEM DE SERVIÇO ===== -->
+  <div id="modalOS" class="modal hidden">
+    <div class="modal-caixa">
+      <h2 id="tituloOS">Nova ordem de serviço</h2>
+      <form id="formOS">
+        <label>Cliente <input name="cliente" required></label>
+        <label>Aparelho / item <input name="aparelho" required placeholder="Ex.: Liquidificador, notebook..."></label>
+        <label>Descrição do serviço <input name="descricao" placeholder="Ex.: trocar a ladra"></label>
+        <div class="linha-dupla">
+          <label>Valor orçado (R$) <input name="valor" type="number" min="0" step="0.01" value="0"></label>
+          <label>Status
+            <select name="status">
+              <option value="aberta">Aberta</option>
+              <option value="em_andamento">Em andamento</option>
+              <option value="pronta">Pronta</option>
+              <option value="entregue">Entregue</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
+          </label>
+        </div>
+        <div class="modal-acoes">
+          <button type="submit" class="btn primario">Salvar</button>
+          <button type="button" id="btnCancelarOS" class="btn secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL TECLADO NUMÉRICO ===== -->
+  <div id="modalNumpad" class="modal hidden">
+    <div class="modal-caixa" style="width:min(320px,92vw)">
+      <h2 id="tituloNumpad" style="font-size:1rem">Quantidade</h2>
+      <div id="displayNumpad" class="numpad-display">0</div>
+      <div class="numpad">
+        <button type="button" data-tecla="1">1</button>
+        <button type="button" data-tecla="2">2</button>
+        <button type="button" data-tecla="3">3</button>
+        <button type="button" data-tecla="4">4</button>
+        <button type="button" data-tecla="5">5</button>
+        <button type="button" data-tecla="6">6</button>
+        <button type="button" data-tecla="7">7</button>
+        <button type="button" data-tecla="8">8</button>
+        <button type="button" data-tecla="9">9</button>
+        <button type="button" data-tecla=".">,</button>
+        <button type="button" data-tecla="0">0</button>
+        <button type="button" data-tecla="apagar">⌫</button>
+      </div>
+      <div class="modal-acoes">
+        <button id="btnNumpadOk" class="btn primario">OK</button>
+        <button id="btnNumpadCancelar" class="btn secundario">Cancelar</button>
+      </div>
     </div>
   </div>
 

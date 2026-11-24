@@ -9,7 +9,7 @@ const { carregar, salvar, DB_FILE, DATA_DIR } = require('./db');
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const VERSAO = '4.0.0';
+const VERSAO = '4.1.0';
 const SESSAO_MS = 12 * 60 * 60 * 1000;
 const LOGIN_MAX_TENTATIVAS = Number(process.env.PDV_LOGIN_MAX_TENTATIVAS) || 8;
 const LOGIN_JANELA_MS = Number(process.env.PDV_LOGIN_JANELA_MS) || 5 * 60 * 1000;
@@ -270,6 +270,19 @@ function produtoJSON(p) {
   };
 }
 
+function osJSON(o) {
+  return {
+    id: o.id,
+    cliente: o.cliente,
+    aparelho: o.aparelho,
+    descricao: o.descricao || '',
+    valor: brl(o.valor || 0),
+    status: o.status,
+    criadoEm: o.criadoEm,
+    atualizadaEm: o.atualizadaEm,
+  };
+}
+
 function clienteJSON(c) {
   return {
     id: c.id,
@@ -467,6 +480,14 @@ async function rotear(req, res, url) {
     if (corpo.loja) {
       for (const chave of ['nome', 'cnpj', 'endereco', 'telefone']) {
         if (typeof corpo.loja[chave] === 'string') db.configuracao.loja[chave] = corpo.loja[chave].trim();
+      }
+      if (corpo.loja.logo !== undefined) {
+        const logo = String(corpo.loja.logo || '');
+        if (logo && !/^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/.test(logo)) {
+          return json(res, 400, { erro: 'Logo deve ser um arquivo de imagem' });
+        }
+        if (logo.length > 400000) return json(res, 400, { erro: 'Logo muito grande (máximo ~300KB)' });
+        db.configuracao.loja.logo = logo;
       }
     }
     if (typeof corpo.cupom?.mensagem === 'string') db.configuracao.cupom.mensagem = corpo.cupom.mensagem.trim();
@@ -777,6 +798,74 @@ async function rotear(req, res, url) {
     salvar();
     audit(usuario, 'fiado-recebido', { cliente: cliente.nome, valor, forma });
     return json(res, 200, clienteJSON(cliente));
+  }
+
+
+  if (pathname === '/api/os' && method === 'GET') {
+    const status = url.searchParams.get('status');
+    const lista = [...db.ordens].sort((a, b) => b.id - a.id);
+    const filtradas = status ? lista.filter((o) => o.status === status) : lista;
+    return json(res, 200, filtradas.map(osJSON));
+  }
+
+  if (pathname === '/api/os' && method === 'POST') {
+    const corpo = await lerCorpo(req);
+    const cliente = String(corpo.cliente || '').trim();
+    const aparelho = String(corpo.aparelho || '').trim();
+    if (!cliente) return json(res, 400, { erro: 'Cliente obrigatório' });
+    if (!aparelho) return json(res, 400, { erro: 'Aparelho/item obrigatório' });
+    const valor = brl(Number(corpo.valor) || 0);
+    if (!Number.isFinite(valor) || valor < 0) return json(res, 400, { erro: 'Valor inválido' });
+    const os = {
+      id: db.seqOS++,
+      cliente,
+      aparelho,
+      descricao: String(corpo.descricao || '').trim(),
+      valor,
+      status: 'aberta',
+      criadoEm: new Date().toISOString(),
+      atualizadaEm: new Date().toISOString(),
+    };
+    db.ordens.push(os);
+    salvar();
+    audit(usuario, 'os-criada', { id: os.id, cliente });
+    return json(res, 201, osJSON(os));
+  }
+
+  if ((m = pathname.match(/^\/api\/os\/(\d+)$/))) {
+    const id = Number(m[1]);
+    const os = db.ordens.find((o) => o.id === id);
+    if (!os) return json(res, 404, { erro: 'Ordem de serviço não encontrada' });
+
+    if (method === 'PUT') {
+      const corpo = await lerCorpo(req);
+      if (typeof corpo.cliente === 'string' && corpo.cliente.trim()) os.cliente = corpo.cliente.trim();
+      if (typeof corpo.aparelho === 'string' && corpo.aparelho.trim()) os.aparelho = corpo.aparelho.trim();
+      if (typeof corpo.descricao === 'string') os.descricao = corpo.descricao.trim();
+      if (corpo.valor !== undefined) {
+        const valor = brl(Number(corpo.valor));
+        if (!Number.isFinite(valor) || valor < 0) return json(res, 400, { erro: 'Valor inválido' });
+        os.valor = valor;
+      }
+      if (corpo.status !== undefined) {
+        if (!['aberta', 'em_andamento', 'pronta', 'entregue', 'cancelada'].includes(corpo.status)) {
+          return json(res, 400, { erro: 'Status inválido' });
+        }
+        os.status = corpo.status;
+      }
+      os.atualizadaEm = new Date().toISOString();
+      salvar();
+      audit(usuario, 'os-alterada', { id, status: os.status });
+      return json(res, 200, osJSON(os));
+    }
+
+    if (method === 'DELETE') {
+      if (!exigirAdmin({ usuario }, res)) return;
+      db.ordens = db.ordens.filter((o) => o.id !== id);
+      salvar();
+      audit(usuario, 'os-excluida', { id });
+      return json(res, 204, null);
+    }
   }
 
   if (pathname === '/api/vendas' && method === 'GET') {

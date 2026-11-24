@@ -336,4 +336,44 @@ body.tema-escuro #formEntrada label,
 body.tema-escuro .lbl-interna,
 body.tema-escuro .campo-data,
 body.tema-escuro .setup-aviso { color: var(--cinza); }
-.theme-btn { background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 4px 6px; }
+.theme-btn { background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 4px 6px; }\n
+/* ---------- teclado de toque ---------- */
+.numpad-display {
+  text-align: center;
+  font-size: 1.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 10px;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  min-height: 52px;
+}
+.numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.numpad button {
+  padding: 16px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  background: var(--painel);
+  color: var(--texto);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.numpad button:active { background: #e2e8f0; }
+body.tema-escuro .numpad button:active { background: #1e293b; }
+.qtd-tap { background: none; border: 1px dashed var(--borda); border-radius: 6px; min-width: 34px; padding: 3px 7px; cursor: pointer; font-weight: 700; color: var(--texto); }
+
+/* ---------- status da ordem ---------- */
+.badge-status { padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 700; }
+.badge-status.aberta { background: #fef3c7; color: #92400e; }
+.badge-status.em_andamento { background: #dbeafe; color: #1d4ed8; }
+.badge-status.pronta { background: #dcfce7; color: #15803d; }
+.badge-status.entregue { background: #e2e8f0; color: #475569; }
+.badge-status.cancelada { background: #fee2e2; color: var(--perigo); }
+body.tema-escuro .badge-status.aberta { background: #3a2e0a; color: #fde68a; }
+body.tema-escuro .badge-status.em_andamento { background: #0c2744; color: #93c5fd; }
+body.tema-escuro .badge-status.pronta { background: #0b2916; color: #86efac; }
+body.tema-escuro .badge-status.entregue { background: #1e293b; color: #cbd5e1; }
+body.tema-escuro .badge-status.cancelada { background: #3f1212; color: #fca5a5; }

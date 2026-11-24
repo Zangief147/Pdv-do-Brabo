@@ -15,6 +15,9 @@ const estado = {
   vendasCache: [],
   relatorio: null,
   cfg: null,
+  ordens: [],
+  osEditando: null,
+  logoPendente: '',
 };
 
 /* ---------- infraestrutura ---------- */
@@ -186,6 +189,7 @@ $('#btnSair').addEventListener('click', async () => {
 const carregadoresPorAba = {
   produtos: carregarAbaProdutos,
   clientes: carregarClientes,
+  os: carregarOs,
   historico: carregarHistorico,
   relatorios: carregarRelatorio,
   operadores: carregarOperadores,
@@ -329,7 +333,7 @@ function renderCarrinho() {
         return `
           <tr>
             <td>${escapar(p.nome)}</td>
-            <td><div class="qtd-ctrl"><button data-acao="menos" data-id="${id}">−</button> ${qtd} <button data-acao="mais" data-id="${id}">+</button></div></td>
+            <td><div class="qtd-ctrl"><button data-acao="menos" data-id="${id}">−</button> <button class="qtd-tap" data-tap="${id}" title="Digitar quantidade">${qtd}</button> <button data-acao="mais" data-id="${id}">+</button></div></td>
             <td>${brl(p.preco)}</td>
             <td><strong>${brl(qtd * p.preco)}</strong></td>
             <td><span class="remover" data-id="${id}">✕</span></td>
@@ -339,7 +343,22 @@ function renderCarrinho() {
     corpo.querySelectorAll('[data-acao]').forEach((b) =>
       b.addEventListener('click', () => adicionarAoCarrinho(Number(b.dataset.id), b.dataset.acao === 'mais' ? 1 : -1))
     );
-    corpo.querySelectorAll('.remover').forEach((b) =>
+    corpo.querySelectorAll('[data-tap]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const id = Number(b.dataset.tap);
+      const p = estado.produtos.find((x) => x.id === id);
+      if (!p) return;
+      abrirNumpad(`Qtd — ${p.nome}`, estado.carrinho.get(id), (qtd) => {
+        if (qtd > p.estoque) {
+          toast(`Estoque insuficiente (${p.estoque} ${p.unidade})`, 'erro');
+          return;
+        }
+        estado.carrinho.set(id, qtd);
+        renderCarrinho();
+      });
+    })
+  );
+  corpo.querySelectorAll('.remover').forEach((b) =>
       b.addEventListener('click', () => {
         estado.carrinho.delete(Number(b.dataset.id));
         renderCarrinho();
@@ -444,6 +463,7 @@ function cupomHTML(venda) {
   const loja = estado.cfg?.loja || {};
   const cabecalho = `
     <div style="text-align:center">
+      ${loja.logo ? `<img src="${loja.logo}" style="max-width:72mm;max-height:90px;margin:0 auto 8px;display:block">` : ''}
       ${loja.nome ? `<strong>${escapar(loja.nome)}</strong><br>` : ''}
       ${loja.cnpj ? `${escapar(loja.cnpj)}<br>` : ''}
       ${loja.endereco ? `${escapar(loja.endereco)}<br>` : ''}
@@ -1157,6 +1177,126 @@ $('#formFecharCaixa').addEventListener('submit', async (e) => {
   }
 });
 
+/* ---------- ordens de serviço ---------- */
+
+const rotuloStatus = {
+  aberta: 'Aberta',
+  em_andamento: 'Em andamento',
+  pronta: 'Pronta',
+  entregue: 'Entregue',
+  cancelada: 'Cancelada',
+};
+
+async function carregarOs() {
+  estado.ordens = await api('os');
+  renderOs($('#filtroOS')?.value || '');
+}
+
+function renderOs(filtro) {
+  const termo = filtro.trim().toLowerCase();
+  const lista = estado.ordens.filter(
+    (o) => !termo || o.cliente.toLowerCase().includes(termo) || o.aparelho.toLowerCase().includes(termo)
+  );
+  $('#corOS').innerHTML = lista
+    .map(
+      (o) => `
+      <tr>
+        <td><strong>${o.id}</strong></td>
+        <td>${escapar(o.cliente)}</td>
+        <td>${escapar(o.aparelho)}${o.descricao ? `<div style="font-size:.78rem;color:var(--cinza)">${escapar(o.descricao)}</div>` : ''}</td>
+        <td class="num"><strong>${brl(o.valor)}</strong></td>
+        <td><span class="badge-status ${o.status}">${rotuloStatus[o.status] || escapar(o.status)}</span></td>
+        <td><button class="btn secundario mini" data-os="${o.id}">Editar</button></td>
+      </tr>`
+    )
+    .join('') || '<tr><td colspan="6" style="color:#94a3b8;padding:20px;text-align:center">Nenhuma ordem cadastrada</td></tr>';
+  $('#corOS').querySelectorAll('[data-os]').forEach((b) =>
+    b.addEventListener('click', () => abrirModalOS(Number(b.dataset.os)))
+  );
+}
+
+function abrirModalOS(id = null) {
+  estado.osEditando = id;
+  const form = $('#formOS');
+  form.reset();
+  $('#tituloOS').textContent = id ? `Ordem #${id}` : 'Nova ordem de serviço';
+  if (id) {
+    const os = estado.ordens.find((x) => x.id === id);
+    form.cliente.value = os.cliente;
+    form.aparelho.value = os.aparelho;
+    form.descricao.value = os.descricao;
+    form.valor.value = os.valor;
+    form.status.value = os.status;
+  }
+  modal('modalOS', true);
+  form.cliente.focus();
+}
+
+$('#btnNovaOS').addEventListener('click', () => abrirModalOS());
+$('#btnCancelarOS').addEventListener('click', () => modal('modalOS', false));
+$('#filtroOS').addEventListener('input', (e) => renderOs(e.target.value));
+
+$('#formOS').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const corpo = {
+    cliente: form.cliente.value,
+    aparelho: form.aparelho.value,
+    descricao: form.descricao.value,
+    valor: Number(form.valor.value) || 0,
+  };
+  if (estado.osEditando) corpo.status = form.status.value;
+  try {
+    if (estado.osEditando) {
+      await api(`os/${estado.osEditando}`, { method: 'PUT', body: corpo });
+      toast('Ordem atualizada', 'ok');
+    } else {
+      await api('os', { method: 'POST', body: corpo });
+      toast('Ordem criada', 'ok');
+    }
+    modal('modalOS', false);
+    await carregarOs();
+  } catch (err) {
+    toast(err.message, 'erro');
+  }
+});
+
+/* ---------- teclado numérico (toque) ---------- */
+
+let numpadTexto = '';
+let numpadAoConfirmar = null;
+
+function abrirNumpad(titulo, inicial, aoConfirmar) {
+  $('#tituloNumpad').textContent = titulo;
+  numpadTexto = String(inicial ?? '');
+  numpadAoConfirmar = aoConfirmar;
+  $('#displayNumpad').textContent = numpadTexto || '0';
+  modal('modalNumpad', true);
+}
+
+$('#modalNumpad').addEventListener('click', (e) => {
+  const tecla = e.target.closest('[data-tecla]');
+  if (!tecla) return;
+  const t = tecla.dataset.tecla;
+  if (t === 'apagar') numpadTexto = numpadTexto.slice(0, -1);
+  else if (t === '.') { if (!numpadTexto.includes('.')) numpadTexto += '.'; }
+  else if (numpadTexto.replace('.', '').length < 8) numpadTexto += t;
+  $('#displayNumpad').textContent = numpadTexto || '0';
+});
+
+$('#btnNumpadOk').addEventListener('click', () => {
+  const valor = Number(numpadTexto);
+  if (!Number.isFinite(valor) || valor <= 0) {
+    toast('Valor inválido', 'erro');
+    return;
+  }
+  const aoConfirmar = numpadAoConfirmar;
+  modal('modalNumpad', false);
+  if (aoConfirmar) aoConfirmar(valor);
+});
+
+$('#btnNumpadCancelar').addEventListener('click', () => modal('modalNumpad', false));
+
 /* ---------- ajustes ---------- */
 
 async function carregarAjustes() {
@@ -1167,6 +1307,14 @@ async function carregarAjustes() {
   $('#cfgEndereco').value = configuracao.loja.endereco || '';
   $('#cfgTelefone').value = configuracao.loja.telefone || '';
   $('#cfgMensagem').value = configuracao.cupom.mensagem || '';
+  estado.logoPendente = configuracao.loja.logo || '';
+  if (estado.logoPendente) {
+    $('#cfgLogoPreview').src = estado.logoPendente;
+    $('#cfgLogoPreview').classList.remove('hidden');
+  } else {
+    $('#cfgLogoPreview').classList.add('hidden');
+    $('#cfgLogoPreview').removeAttribute('src');
+  }
   $('#infoVersao').textContent = `Versão do sistema: ${versao} · Dados em data/db.json`;
 
   if (estado.usuario.role === 'admin') {
@@ -1183,12 +1331,50 @@ async function carregarAjustes() {
   }
 }
 
+function redimensionarLogo(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const maximo = 320;
+      const escala = Math.min(1, maximo / Math.max(img.width, img.height));
+      if (escala === 1 && dataUrl.length < 300000) return resolve(dataUrl);
+      const tela = document.createElement('canvas');
+      tela.width = Math.round(img.width * escala);
+      tela.height = Math.round(img.height * escala);
+      tela.getContext('2d').drawImage(img, 0, 0, tela.width, tela.height);
+      resolve(tela.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+$('#cfgLogo').addEventListener('change', async () => {
+  const arquivo = $('#cfgLogo').files[0];
+  if (!arquivo) return;
+  const leitor = new FileReader();
+  leitor.onload = async () => {
+    estado.logoPendente = await redimensionarLogo(leitor.result);
+    $('#cfgLogoPreview').src = estado.logoPendente;
+    $('#cfgLogoPreview').classList.remove('hidden');
+  };
+  leitor.readAsDataURL(arquivo);
+});
+
+$('#btnRemoverLogo').addEventListener('click', () => {
+  estado.logoPendente = '';
+  $('#cfgLogo').value = '';
+  $('#cfgLogoPreview').classList.add('hidden');
+  $('#cfgLogoPreview').removeAttribute('src');
+  toast('Logo removida (salve para aplicar)', 'ok');
+});
+
 $('#btnSalvarConfig').addEventListener('click', async () => {
   try {
     const r = await api('configuracao', {
       method: 'PUT',
       body: {
-        loja: { nome: $('#cfgNome').value, cnpj: $('#cfgCnpj').value, endereco: $('#cfgEndereco').value, telefone: $('#cfgTelefone').value },
+        loja: { nome: $('#cfgNome').value, cnpj: $('#cfgCnpj').value, endereco: $('#cfgEndereco').value, telefone: $('#cfgTelefone').value, logo: estado.logoPendente ?? '' },
         cupom: { mensagem: $('#cfgMensagem').value },
       },
     });

@@ -1,4 +1,4 @@
-# PDV Express — Ponto de Venda v4
+# PDV Express — Ponto de Venda v4.1
 
 PDV web completo com **zero dependências externas**: exige apenas Node.js 18+.
 
@@ -41,6 +41,9 @@ Ao abrir o sistema pela primeira vez, a tela inicial pede a criação do **usuá
 - **Histórico**: últimas 200 vendas com reimpressão de cupom e cancelamento (admin)
 - **Operadores** (admin): criar, editar, trocar senha, desativar e excluir usuários; sessões invalidadas ao desativar ou trocar senha
 - **Ajustes** (admin): dados da loja no cupom (nome, CNPJ, endereço, telefone), mensagem personalizada e **backup do banco em JSON**
+- **Ordens de serviço**: aba própria com CRUD (cliente, aparelho/item, descrição, valor orçado) e fluxo de status (aberta → em andamento → pronta → entregue, ou cancelada), filtro por texto e por status; exclusão só para admin, tudo registrado na auditoria
+- **Cupom com logo**: o admin envia a logo da loja em **Ajustes** (recebida, redimensionada e salva no banco); sai no topo de todos os cupons impressos
+- **Teclado de toque**: clicar na quantidade de um item do carrinho abre um **teclado numérico grande** para digitar a quantidade exata (ideal para tablet/balança), com vírgula decimal e correção
 - **Segurança**: senhas com scrypt + salt, sessões com expiração (12h), preços validados no servidor, todas as rotas exigem login, limitador de tentativas no login (8 erros em 5 min bloqueiam temporariamente), graceful shutdown (SIGINT/SIGTERM preservam o banco)
 
 ## Dados
@@ -57,11 +60,11 @@ rm -rf data
 pdv/
 ├── server.js        # API REST + servidor estático (http puro)
 ├── db.js            # persistência JSON (inclui migração de caixa único → multi-caixa)
-├── teste.js         # 101 testes end-to-end
+├── teste.js         # 112 testes end-to-end
 ├── data/db.json     # base de dados (gerado em runtime)
 ├── data/auditoria.log  # trilha de auditoria (JSON por linha)
 └── public/
-    ├── index.html   # interface (8 abas)
+    ├── index.html   # interface (9 abas)
     ├── style.css
     └── app.js       # lógica do frontend
 ```
@@ -94,6 +97,8 @@ pdv/
 | POST | `/api/clientes/:id/receber` | logado | recebimento de fiado |
 | POST | `/api/produtos/:id/entrada` | admin | entrada de estoque |
 | POST | `/api/produtos/importar` | admin | importação em massa (CSV) |
+| GET/POST | `/api/os` | logado | listagem (filtro `?status=`) e criação de ordens de serviço |
+| PUT/DELETE | `/api/os/:id` | logado / DELETE admin | status/valor da ordem; exclusão só admin |
 
 ## Nota sobre emissão fiscal
 

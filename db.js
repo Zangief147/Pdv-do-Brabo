@@ -13,6 +13,8 @@ const padrao = () => ({
   seqVenda: 1,
   clientes: [],
   seqCliente: 1,
+  ordens: [],
+  seqOS: 1,
   usuarios: [],
   seqUsuario: 1,
   sessoes: {},
@@ -30,10 +32,10 @@ let db = null;
 function migrar(dados) {
   const base = padrao();
   const d = { ...base, ...dados };
-  for (const chaveLista of ['produtos', 'vendas', 'usuarios', 'fechamentos', 'clientes']) {
+  for (const chaveLista of ['produtos', 'vendas', 'usuarios', 'fechamentos', 'clientes', 'ordens']) {
     if (!Array.isArray(d[chaveLista])) d[chaveLista] = [];
   }
-  for (const chaveNum of ['seqProduto', 'seqVenda', 'seqUsuario', 'seqFechamento', 'seqCliente']) {
+  for (const chaveNum of ['seqProduto', 'seqVenda', 'seqUsuario', 'seqFechamento', 'seqCliente', 'seqOS']) {
     if (!Number.isInteger(d[chaveNum])) d[chaveNum] = base[chaveNum];
   }
   if (!d.sessoes || typeof d.sessoes !== 'object') d.sessoes = {};
