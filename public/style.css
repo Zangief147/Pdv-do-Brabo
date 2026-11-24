@@ -297,3 +297,43 @@ main { flex: 1; overflow: hidden; padding: 16px; }
 .toast.ok { background: var(--verde); }
 
 .hidden { display: none !important; }
+
+/* ---------- tema escuro ---------- */
+body.tema-escuro {
+  --fundo: #0b1220;
+  --painel: #111c30;
+  --texto: #e2e8f0;
+  --borda: #26344f;
+  --cinza: #8fa3bd;
+}
+body.tema-escuro .login-caixa { background: var(--painel); color: var(--texto); }
+body.tema-escuro .login-caixa label { color: var(--cinza); }
+body.tema-escuro input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]),
+body.tema-escuro textarea,
+body.tema-escuro select {
+  background: #0b1220;
+  color: var(--texto);
+  border-color: var(--borda);
+}
+body.tema-escuro ::placeholder { color: #5b6b85; }
+body.tema-escuro .qtd-ctrl button
+ { background: #1e293b; color: var(--texto); border-color: var(--borda); }
+body.tema-escuro .modal-caixa { background: var(--painel); color: var(--texto); }
+body.tema-escuro .btn.secundario { background: #1e293b; color: var(--texto); }
+body.tema-escuro #corProdutos tr:hover,
+body.tema-escuro #corOperadores tr:hover,
+body.tema-escuro #corHistorico tr:hover,
+body.tema-escuro #corClientes tr:hover { background: #16223b; }
+body.tema-escuro .badge-cancelada { background: #3f1212; }
+body.tema-escuro .lista-pag li { background: #16223b; }
+body.tema-escuro .trep th { background: #16223b; }
+body.tema-escuro #formProduto label,
+body.tema-escuro #formOperador label,
+body.tema-escuro #formMov label,
+body.tema-escuro #formCliente label,
+body.tema-escuro #formReceber label,
+body.tema-escuro #formEntrada label,
+body.tema-escuro .lbl-interna,
+body.tema-escuro .campo-data,
+body.tema-escuro .setup-aviso { color: var(--cinza); }
+.theme-btn { background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 4px 6px; }

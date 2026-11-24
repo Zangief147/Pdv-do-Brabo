@@ -56,6 +56,21 @@ function modal(id, abrir) {
   $(`#${id}`).classList.toggle('hidden', !abrir);
 }
 
+/* ---------- tema ---------- */
+
+const aplicarTema = () => {
+  const escuro = localStorage.getItem('pdvtema') === 'escuro';
+  document.body.classList.toggle('tema-escuro', escuro);
+  const botao = $('#btnTema');
+  if (botao) botao.textContent = escuro ? '☀️' : '🌙';
+};
+
+$('#btnTema').addEventListener('click', () => {
+  localStorage.setItem('pdvtema', document.body.classList.contains('tema-escuro') ? 'claro' : 'escuro');
+  aplicarTema();
+});
+aplicarTema();
+
 /* ---------- login / sessão ---------- */
 
 function mostrarLogin(mensagem = '') {
